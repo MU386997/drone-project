@@ -1,0 +1,3 @@
+[submodule "llm_waypoint_following"]
+	path = llm_waypoint_following
+	url = https://github.com/farrukh-e/crazyflie-ros-navigation.git
