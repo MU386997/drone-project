@@ -79,6 +79,9 @@ Communication
 
 Repository Structure
 
+## Repository Structure
+
+```text
 .
 ├── maps/
 │   └── Greenhouse and occupancy map files
@@ -109,6 +112,7 @@ Repository Structure
 │
 └── waypoint_flight.py
     └── Interactive waypoint mission planner and autonomous flight system
+```
 
 ⸻
 
