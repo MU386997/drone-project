@@ -1,0 +1,4328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CropWatcher — Predictive Crop-Health Monitoring</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- Chart.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- Vue 3 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.21/vue.global.prod.min.js"></script>
+<!-- PapaParse for CSV -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+<style>
+/* SVG icon component */
+.icon-svg { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; }
+.icon-svg svg { width: 1em; height: 1em; fill: currentColor; }
+:root {
+  --clr-bg: #0a0f0d;
+  --clr-surface: #111a16;
+  --clr-surface-2: #162420;
+  --clr-surface-3: #1c2e28;
+  --clr-border: rgba(74, 222, 160, 0.12);
+  --clr-border-subtle: rgba(255,255,255,0.06);
+  --clr-text: #e8f5ee;
+  --clr-text-muted: #7da395;
+  --clr-text-dim: #4a6b5e;
+  --clr-accent: #4ade80;
+  --clr-accent-warm: #fbbf24;
+  --clr-danger: #f87171;
+  --clr-danger-bg: rgba(248,113,113,0.1);
+  --clr-warning: #fbbf24;
+  --clr-warning-bg: rgba(251,191,36,0.1);
+  --clr-success: #4ade80;
+  --clr-success-bg: rgba(74,222,128,0.1);
+  --clr-info: #60a5fa;
+
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --font-body: 'DM Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px var(--clr-border-subtle);
+  --shadow-glow: 0 0 40px rgba(74,222,128,0.06);
+}
+
+[data-theme="light"] {
+  --clr-bg: #f4f7f5;
+  --clr-surface: #ffffff;
+  --clr-surface-2: #eef3f0;
+  --clr-surface-3: #e2ebe6;
+  --clr-border: rgba(22,100,60,0.12);
+  --clr-border-subtle: rgba(0,0,0,0.06);
+  --clr-text: #0f1f18;
+  --clr-text-muted: #4a6b5e;
+  --clr-text-dim: #8fa89c;
+  --clr-accent: #16a34a;
+  --clr-danger: #dc2626;
+  --clr-danger-bg: rgba(220,38,38,0.08);
+  --clr-warning: #d97706;
+  --clr-warning-bg: rgba(217,119,6,0.08);
+  --clr-success: #16a34a;
+  --clr-success-bg: rgba(22,163,74,0.08);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px var(--clr-border-subtle);
+  --shadow-glow: 0 0 40px rgba(22,163,74,0.04);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 15px; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--clr-bg);
+  color: var(--clr-text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--clr-border); border-radius: 99px; }
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(74,222,128,0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(251,191,36,0.03) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+#app { position: relative; z-index: 1; }
+
+/* ===== LAYOUT ===== */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 260px;
+  min-width: 260px;
+  background: var(--clr-surface);
+  border-right: 1px solid var(--clr-border-subtle);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+.sidebar-header {
+  padding: 1.5rem 1.25rem 1rem;
+  border-bottom: 1px solid var(--clr-border-subtle);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.brand-icon {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, var(--clr-accent), #22c55e);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+}
+
+.brand-text {
+  font-family: var(--font-display);
+  font-size: 1.55rem;
+  letter-spacing: -0.02em;
+  color: var(--clr-text);
+}
+
+.brand-sub {
+  font-size: 0.7rem;
+  color: var(--clr-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 0.3rem;
+  font-weight: 500;
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 0.75rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-section-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--clr-text-dim);
+  padding: 1rem 0.5rem 0.4rem;
+  font-weight: 600;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.87rem;
+  color: var(--clr-text-muted);
+  transition: all 0.15s;
+  font-weight: 450;
+  border: 1px solid transparent;
+  user-select: none;
+}
+
+.nav-item:hover {
+  background: var(--clr-surface-2);
+  color: var(--clr-text);
+}
+
+.nav-item.active {
+  background: var(--clr-success-bg);
+  color: var(--clr-accent);
+  border-color: var(--clr-border);
+  font-weight: 600;
+}
+
+.nav-icon {
+  width: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.sidebar-footer {
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--clr-border-subtle);
+}
+
+.drone-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--clr-text-muted);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--clr-text-dim);
+  flex-shrink: 0;
+}
+
+.status-dot.online { background: var(--clr-success); box-shadow: 0 0 6px var(--clr-success); }
+.status-dot.warning { background: var(--clr-warning); box-shadow: 0 0 6px var(--clr-warning); }
+.status-dot.offline { background: var(--clr-danger); }
+
+/* Main content */
+.main-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  height: 56px;
+  background: var(--clr-surface);
+  border-bottom: 1px solid var(--clr-border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  backdrop-filter: blur(12px);
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.page-title {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 400;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 99px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.pill-success { background: var(--clr-success-bg); color: var(--clr-success); }
+.pill-warning { background: var(--clr-warning-bg); color: var(--clr-warning); }
+.pill-danger { background: var(--clr-danger-bg); color: var(--clr-danger); }
+.pill-neutral { background: var(--clr-surface-2); color: var(--clr-text-muted); }
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 550;
+  font-family: var(--font-body);
+  border: 1px solid var(--clr-border);
+  background: var(--clr-surface-2);
+  color: var(--clr-text);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn:hover { background: var(--clr-surface-3); }
+
+.btn-primary {
+  background: var(--clr-accent);
+  color: #0a0f0d;
+  border-color: var(--clr-accent);
+}
+
+.btn-primary:hover { opacity: 0.9; }
+
+.btn-sm { padding: 0.3rem 0.6rem; font-size: 0.75rem; }
+
+.btn-icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+}
+
+.content-area {
+  flex: 1;
+  padding: 1.5rem;
+  max-width: 1600px;
+}
+
+/* Cards */
+.card {
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.card-header {
+  padding: 1rem 1.25rem 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--clr-border-subtle);
+}
+
+.card-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--clr-text);
+}
+
+.card-subtitle {
+  font-size: 0.72rem;
+  color: var(--clr-text-dim);
+  margin-top: 0.15rem;
+}
+
+.card-body { padding: 1.25rem; }
+
+.card-body-flush { padding: 0; }
+
+/* Stats grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat-card {
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.25rem;
+  box-shadow: var(--shadow-card);
+}
+
+.stat-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--clr-text-dim);
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.6rem;
+  font-weight: 500;
+  color: var(--clr-text);
+  line-height: 1.1;
+}
+
+.stat-change {
+  font-size: 0.72rem;
+  margin-top: 0.3rem;
+  font-weight: 500;
+}
+
+.stat-change.up { color: var(--clr-success); }
+.stat-change.down { color: var(--clr-danger); }
+.stat-change.neutral { color: var(--clr-text-dim); }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+.grid-2-1 { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
+.grid-1-2 { display: grid; grid-template-columns: 1fr 2fr; gap: 1rem; }
+
+/* Chart */
+.chart-container {
+  position: relative;
+  width: 100%;
+  height: 320px;
+}
+
+.chart-container canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.heatmap-grid {
+  display: grid;
+  gap: 3px;
+  padding: 0.5rem;
+}
+
+.heatmap-cell {
+  aspect-ratio: 1.4;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  transition: all 0.2s;
+  cursor: pointer;
+  position: relative;
+}
+
+.heatmap-cell:hover {
+  transform: scale(1.05);
+  z-index: 2;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.heatmap-cell .zone-label {
+  font-size: 0.6rem;
+  opacity: 0.7;
+  margin-bottom: 2px;
+}
+
+.heatmap-cell .zone-val {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.heatmap-cell.alert {
+  animation: pulse-alert 2s infinite;
+}
+
+@keyframes pulse-alert {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(248,113,113,0.1); }
+}
+
+/* Tables */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--clr-text-dim);
+  font-weight: 600;
+  border-bottom: 1px solid var(--clr-border-subtle);
+  background: var(--clr-surface-2);
+  position: sticky;
+  top: 0;
+}
+
+.data-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--clr-border-subtle);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--clr-text-muted);
+}
+
+.data-table tbody tr:hover {
+  background: var(--clr-surface-2);
+}
+
+.table-scroll {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+/* Form elements */
+.form-group {
+  margin-bottom: 0.85rem;
+}
+
+.form-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--clr-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.3rem;
+  display: block;
+}
+
+select, input[type="text"], input[type="number"] {
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.82rem;
+  font-family: var(--font-body);
+  background: var(--clr-surface-2);
+  color: var(--clr-text);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+select:focus, input:focus {
+  border-color: var(--clr-accent);
+}
+
+input[type="file"] {
+  font-size: 0.8rem;
+  color: var(--clr-text-muted);
+}
+
+.toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-track {
+  width: 36px;
+  height: 20px;
+  border-radius: 99px;
+  background: var(--clr-surface-3);
+  border: 1px solid var(--clr-border);
+  position: relative;
+  transition: background 0.2s;
+}
+
+.toggle-track.on {
+  background: var(--clr-accent);
+  border-color: var(--clr-accent);
+}
+
+.toggle-track::after {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s;
+}
+
+.toggle-track.on::after {
+  transform: translateX(16px);
+}
+
+.toggle-label {
+  font-size: 0.8rem;
+  color: var(--clr-text-muted);
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--clr-surface-2);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+}
+
+.tab-item {
+  padding: 0.4rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 550;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--clr-text-dim);
+  transition: all 0.15s;
+  border: none;
+  background: none;
+  font-family: var(--font-body);
+}
+
+.tab-item:hover { color: var(--clr-text); }
+
+.tab-item.active {
+  background: var(--clr-surface);
+  color: var(--clr-text);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.alert-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--clr-border-subtle);
+  margin-bottom: 0.5rem;
+  font-size: 0.82rem;
+  transition: background 0.15s;
+}
+
+.alert-item:hover { background: var(--clr-surface-2); }
+
+.alert-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+.alert-body { flex: 1; }
+.alert-title { font-weight: 600; margin-bottom: 0.15rem; }
+.alert-desc { color: var(--clr-text-muted); font-size: 0.78rem; }
+.alert-time { font-size: 0.7rem; color: var(--clr-text-dim); font-family: var(--font-mono); }
+
+.flight-path-svg {
+  width: 100%;
+  height: 300px;
+  border-radius: var(--radius-md);
+  background: var(--clr-surface-2);
+}
+
+.fade-in {
+  animation: fadeIn 0.35s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  color: var(--clr-text-dim);
+  text-align: center;
+}
+
+.empty-state-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.75rem;
+  opacity: 0.4;
+}
+
+.empty-state-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--clr-text-muted);
+  margin-bottom: 0.3rem;
+}
+
+.empty-state-desc {
+  font-size: 0.82rem;
+  max-width: 360px;
+  line-height: 1.5;
+}
+
+.section-gap { margin-bottom: 1.5rem; }
+
+.zone-tag {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.zone-tag.healthy { background: var(--clr-success-bg); color: var(--clr-success); }
+.zone-tag.warning { background: var(--clr-warning-bg); color: var(--clr-warning); }
+.zone-tag.critical { background: var(--clr-danger-bg); color: var(--clr-danger); }
+
+@media (max-width: 1100px) {
+  .grid-2, .grid-2-1, .grid-1-2 { grid-template-columns: 1fr; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .stats-grid { grid-template-columns: 1fr; }
+}
+
+.prediction-timeline {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  overflow-x: auto;
+}
+
+.prediction-slot {
+  min-width: 80px;
+  padding: 0.6rem;
+  border-radius: var(--radius-sm);
+  background: var(--clr-surface-2);
+  border: 1px solid var(--clr-border-subtle);
+  text-align: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.prediction-slot:hover { border-color: var(--clr-border); }
+
+.prediction-slot .time {
+  font-size: 0.68rem;
+  color: var(--clr-text-dim);
+  font-family: var(--font-mono);
+}
+
+.prediction-slot .score {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0.2rem 0;
+}
+
+.prediction-slot .label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.zone-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--clr-border-subtle);
+  margin-bottom: 1rem;
+}
+
+.zone-detail-id {
+  font-family: var(--font-mono);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--clr-accent);
+}
+
+/* Greenhouse Layout Editor */
+.layout-editor-grid {
+  display: grid;
+  gap: 4px;
+  padding: 0.75rem;
+  background: var(--clr-surface-2);
+  border-radius: var(--radius-md);
+}
+.layout-cell {
+  aspect-ratio: 1.6;
+  border-radius: var(--radius-sm);
+  border: 2px dashed var(--clr-border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  color: var(--clr-text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--clr-surface);
+  position: relative;
+}
+.layout-cell:hover { border-color: var(--clr-accent); background: var(--clr-success-bg); }
+.layout-cell.selected { border-color: var(--clr-accent); border-style: solid; background: var(--clr-success-bg); }
+.layout-cell .cell-coord { font-size: 0.6rem; color: var(--clr-text-dim); }
+
+/* Waypoint list */
+.waypoint-list { max-height: 300px; overflow-y: auto; }
+.waypoint-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--clr-border-subtle);
+  font-size: 0.8rem;
+}
+.waypoint-item:last-child { border-bottom: none; }
+.waypoint-badge {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--clr-accent);
+  color: #0a0f0d;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.65rem; font-weight: 700; flex-shrink: 0;
+}
+.waypoint-info { flex: 1; }
+.waypoint-info .wp-label { font-weight: 600; color: var(--clr-text); }
+.waypoint-info .wp-coord { font-family: var(--font-mono); font-size: 0.72rem; color: var(--clr-text-dim); }
+.waypoint-remove { cursor: pointer; color: var(--clr-danger); opacity: 0.6; transition: opacity 0.15s; font-size: 0.85rem; }
+.waypoint-remove:hover { opacity: 1; }
+
+.llm-chat-card { margin-top: 1rem; }
+.llm-chat-log {
+  max-height: 220px;
+  overflow-y: auto;
+  font-size: 0.82rem;
+  padding: 0.75rem;
+  background: var(--clr-surface-2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--clr-border-subtle);
+  margin-bottom: 0.75rem;
+}
+.llm-chat-msg { margin-bottom: 0.65rem; line-height: 1.45; }
+.llm-chat-msg:last-child { margin-bottom: 0; }
+.llm-chat-msg.user { color: var(--clr-accent); }
+.llm-chat-msg.assistant { color: var(--clr-text); }
+.llm-chat-msg .llm-role { font-size: 0.68rem; text-transform: uppercase; color: var(--clr-text-dim); margin-bottom: 0.2rem; }
+.llm-chat-toolbar {
+  display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center;
+  margin-bottom: 0.5rem; font-size: 0.78rem; color: var(--clr-text-dim);
+}
+.llm-chat-input-row { display: flex; gap: 0.5rem; align-items: flex-end; flex-wrap: wrap; }
+.llm-chat-input-row textarea {
+  flex: 1; min-width: 200px; min-height: 72px;
+  padding: 0.5rem 0.65rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--clr-border); background: var(--clr-surface); color: var(--clr-text);
+  font-family: inherit; font-size: 0.85rem; resize: vertical;
+}
+.mission-path-hint {
+  font-size: 0.72rem; color: var(--clr-text-dim); margin-top: 0.35rem;
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+/* Battery gauge */
+.battery-gauge {
+  width: 100%;
+  height: 20px;
+  background: var(--clr-surface-2);
+  border-radius: 99px;
+  overflow: hidden;
+  position: relative;
+}
+.battery-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.5s ease;
+}
+
+/* Mission log */
+.mission-log { max-height: 260px; overflow-y: auto; }
+.mission-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--clr-border-subtle);
+  font-size: 0.78rem;
+}
+.mission-entry:last-child { border-bottom: none; }
+.mission-ts { font-family: var(--font-mono); font-size: 0.68rem; color: var(--clr-text-dim); min-width: 70px; }
+.mission-msg { color: var(--clr-text-muted); }
+.mission-msg.event-warn { color: var(--clr-warning); }
+.mission-msg.event-error { color: var(--clr-danger); }
+.mission-msg.event-success { color: var(--clr-success); }
+
+/* Export panel */
+.export-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+.export-card {
+  padding: 1rem;
+  border: 1px solid var(--clr-border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+.export-card:hover { border-color: var(--clr-accent); background: var(--clr-success-bg); }
+.export-card .export-icon { font-size: 1.5rem; margin-bottom: 0.4rem; }
+.export-card .export-label { font-size: 0.82rem; font-weight: 600; color: var(--clr-text); }
+.export-card .export-desc { font-size: 0.72rem; color: var(--clr-text-dim); margin-top: 0.2rem; }
+
+/* Run history selector */
+.run-history-list { max-height: 200px; overflow-y: auto; }
+.run-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--clr-border-subtle);
+  cursor: pointer;
+  transition: background 0.15s;
+  font-size: 0.82rem;
+}
+.run-history-item:hover { background: var(--clr-surface-2); }
+.run-history-item.active-run { background: var(--clr-success-bg); border-left: 3px solid var(--clr-accent); }
+.run-date { font-family: var(--font-mono); font-size: 0.72rem; color: var(--clr-text-dim); }
+
+/* Geofence indicator */
+.geofence-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 99px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--clr-success-bg);
+  color: var(--clr-success);
+}
+.geofence-indicator.violated {
+  background: var(--clr-danger-bg);
+  color: var(--clr-danger);
+}
+
+/* Camera feed */
+.camera-feed-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4/3;
+  background: #0d0d0d;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.camera-feed-container .feed-offline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--clr-text-dim);
+}
+.camera-feed-container .feed-offline .feed-icon {
+  font-size: 3rem;
+  opacity: 0.3;
+}
+.camera-feed-container .feed-label {
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+.camera-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  padding: 0.6rem 0.8rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(180deg, rgba(0,0,0,0.6) 0%, transparent 100%);
+  z-index: 2;
+}
+.camera-overlay .rec-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--clr-danger);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.camera-overlay .rec-badge .rec-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--clr-danger);
+  animation: rec-blink 1s infinite;
+}
+@keyframes rec-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.camera-overlay .zone-badge-overlay {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--clr-accent);
+  background: rgba(0,0,0,0.5);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+}
+.camera-bottom-bar {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  padding: 0.5rem 0.8rem;
+  background: linear-gradient(0deg, rgba(0,0,0,0.7) 0%, transparent 100%);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  z-index: 2;
+}
+.camera-bottom-bar .cam-ts {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.6);
+}
+.camera-bottom-bar .cam-meta {
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.5);
+}
+/* Simulated static noise for offline camera */
+.camera-static {
+  position: absolute;
+  inset: 0;
+  background: repeating-conic-gradient(#111 0% 25%, #1a1a1a 0% 50%) 0 0 / 4px 4px;
+  opacity: 0.4;
+  animation: static-shift 0.15s infinite;
+}
+@keyframes static-shift {
+  0% { background-position: 0 0; }
+  50% { background-position: 2px 2px; }
+  100% { background-position: 0 0; }
+}
+
+/* Day change indicator */
+.day-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+.day-change.positive { color: var(--clr-success); }
+.day-change.negative { color: var(--clr-danger); }
+.day-change.flat { color: var(--clr-text-dim); }
+
+/* Offline notice */
+.offline-notice {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 2.5rem 2rem; text-align: center;
+  border: 1px dashed var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-2);
+}
+.offline-notice .offline-icon {
+  width: 48px; height: 48px; border-radius: 50%; background: var(--clr-surface-3);
+  display: flex; align-items: center; justify-content: center; margin-bottom: 1rem;
+}
+.offline-notice .offline-title { font-size: 0.9rem; font-weight: 600; color: var(--clr-text-muted); margin-bottom: 0.3rem; }
+.offline-notice .offline-desc { font-size: 0.78rem; color: var(--clr-text-dim); max-width: 340px; line-height: 1.5; }
+.offline-notice .offline-hint {
+  margin-top: 0.75rem; font-size: 0.7rem; font-family: var(--font-mono); color: var(--clr-text-dim);
+  background: var(--clr-surface-3); padding: 0.3rem 0.6rem; border-radius: var(--radius-sm);
+}
+
+/* Flight control tab */
+.flight-control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+.flight-script-card { padding: 1rem; border: 1px solid var(--clr-border-subtle); border-radius: var(--radius-md); background: var(--clr-surface-2); }
+.flight-script-title { font-size: 0.95rem; font-weight: 700; color: var(--clr-text); margin-bottom: 0.25rem; }
+.flight-script-desc { font-size: 0.78rem; color: var(--clr-text-muted); line-height: 1.45; margin-bottom: 0.85rem; }
+.flight-output { font-family: var(--font-mono); font-size: 0.72rem; line-height: 1.45; white-space: pre-wrap; background: #050806; color: var(--clr-text-muted); border: 1px solid var(--clr-border-subtle); border-radius: var(--radius-md); padding: 0.85rem; max-height: 360px; overflow-y: auto; }
+.flight-status-row { display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; margin-bottom:1rem; }
+
+</style>
+</head>
+
+<body>
+<div id="app">
+  <div class="app-shell" :data-theme="theme">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">
+          <div class="brand-icon"><span class="icon-svg" style="font-size:18px;color:#fff"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M512 704a192 192 0 1 0 0-384 192 192 0 0 0 0 384zm0 64a256 256 0 1 1 0-512 256 256 0 0 1 0 512zm0-704a32 32 0 0 1 32 32v64a32 32 0 0 1-64 0V96a32 32 0 0 1 32-32zm0 768a32 32 0 0 1 32 32v64a32 32 0 0 1-64 0v-64a32 32 0 0 1 32-32zM195.2 195.2a32 32 0 0 1 45.248 0l45.248 45.248a32 32 0 1 1-45.248 45.248L195.2 240.448a32 32 0 0 1 0-45.248zm543.104 543.104a32 32 0 0 1 45.248 0l45.248 45.248a32 32 0 0 1-45.248 45.248l-45.248-45.248a32 32 0 0 1 0-45.248zM64 512a32 32 0 0 1 32-32h64a32 32 0 0 1 0 64H96a32 32 0 0 1-32-32zm768 0a32 32 0 0 1 32-32h64a32 32 0 0 1 0 64h-64a32 32 0 0 1-32-32zM195.2 828.8a32 32 0 0 1 0-45.248l45.248-45.248a32 32 0 0 1 45.248 45.248L240.448 828.8a32 32 0 0 1-45.248 0zm543.104-543.104a32 32 0 0 1 0-45.248l45.248-45.248a32 32 0 0 1 45.248 45.248l-45.248 45.248a32 32 0 0 1-45.248 0z"/></svg></span></div>
+          <div>
+            <div class="brand-text">CropWatcher</div>
+            <div class="brand-sub">Virginia Tech · Spring 2026</div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section-label">Monitor</div>
+        <div class="nav-item" :class="{active: currentPage==='dashboard'}" @click="currentPage='dashboard'">
+          <span class="nav-icon"><span class="icon-svg"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M400 128h-48v688a16 16 0 0 1-16 16H128v48h208a64 64 0 0 0 64-64V128zM592 128h48v688a16 16 0 0 0 16 16h208v48H656a64 64 0 0 1-64-64V128zM233.6 580.8a32 32 0 0 1 45.248 45.248L134.592 770.304a32 32 0 1 1-45.248-45.248L233.6 580.8zM384 384a32 32 0 0 1-45.248 45.248l-128-128A32 32 0 0 1 256 256l128 128zM758.4 580.8a32 32 0 0 0-45.248 45.248l144.256 144.256a32 32 0 1 0 45.248-45.248L758.4 580.8zM608 384a32 32 0 0 0 45.248 45.248l128-128A32 32 0 0 0 736 256l-128 128z"/></svg></span></span> Dashboard
+        </div>
+        <div class="nav-item" :class="{active: currentPage==='heatmap'}" @click="currentPage='heatmap'">
+          <span class="nav-icon"><span class="icon-svg"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M160 160h256v256H160V160zm0 448h256v256H160V608zm448-448h256v256H608V160zm0 448h256v256H608V608z"/></svg></span></span> Zone Health Map
+        </div>
+        <div class="nav-item" :class="{active: currentPage==='timeseries'}" @click="currentPage='timeseries'">
+          <span class="nav-icon"><span class="icon-svg"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M128 896V128h64v640h640v64H192v64h-64zM320 640V384h64v256h-64zm192-128V256h64v256h-64zm192 64V320h64v256h-64z"/></svg></span></span> Time Series
+        </div>
+        <div class="nav-item" :class="{active: currentPage==='flightpath'}" @click="currentPage='flightpath'">
+          <span class="nav-icon"><span class="icon-svg"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M480 32L96 512l384 480 384-480L480 32zm0 132.48L766.72 512 480 859.52 193.28 512 480 164.48z"/><path d="M480 512m-64 0a64 64 0 1 0 128 0 64 64 0 1 0-128 0z"/></svg></span></span> Flight Path
+        </div>
+        <div class="nav-item" :class="{active: currentPage==='flight'}" @click="currentPage='flight'">
+          <span class="nav-icon"><span class="icon-svg"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M512 64l96 288 288 96-288 96-96 288-96-288-288-96 288-96 96-288zm0 181.76L466.56 384 328.32 429.44l138.24 45.44L512 613.12l45.44-138.24 138.24-45.44L557.44 384 512 245.76z"/></svg></span></span> Flight Control
+        </div>
+
+        <div class="nav-section-label">Predict</div>
+        <div class="nav-item" :class="{active: currentPage==='predictions'}" @click="currentPage='predictions'">
+          <span class="nav-icon"><span class="icon-svg"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M512 64L388.8 388.8 64 512l324.8 123.2L512 960l123.2-324.8L960 512 635.2 388.8 512 64zm0 175.04L571.52 389.12l150.08 59.52L571.52 508.16 512 658.24l-59.52-150.08-150.08-59.52 150.08-59.52L512 239.04z"/></svg></span></span> Stress Forecast
+        </div>
+
+        <div class="nav-section-label">Data</div>
+        <div class="nav-item" :class="{active: currentPage==='data'}" @click="currentPage='data'">
+          <span class="nav-icon"><span class="icon-svg"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M832 384H576V128H192v768h640V384zm-26.496-64L640 154.496V320h165.504zM160 64h480l256 256v608a32 32 0 0 1-32 32H160a32 32 0 0 1-32-32V96a32 32 0 0 1 32-32zm160 448h384v64H320v-64zm0 192h384v64H320v-64zm0-384h160v64H320v-64z"/></svg></span></span> Raw Data Table
+        </div>
+        <div class="nav-item" :class="{active: currentPage==='comparison'}" @click="currentPage='comparison'">
+          <span class="nav-icon"><span class="icon-svg"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M352 160h320a320 320 0 1 1 0 640H352a320 320 0 1 1 0-640zm0 64a256 256 0 1 0 0 512 256 256 0 0 0 0-512zm0 64a192 192 0 1 1 0 384 192 192 0 0 1 0-384z"/></svg></span></span> Run Comparison
+        </div>
+        <div class="nav-item" :class="{active: currentPage==='livefeed'}" @click="currentPage='livefeed'">
+          <span class="nav-icon"><span class="icon-svg"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M640 384v64H448a128 128 0 0 0-128 128v128a128 128 0 0 0 128 128h320a128 128 0 0 0 128-128V576a128 128 0 0 0-64-110.848V394.88C918.848 440.32 960 503.04 960 576v128A192 192 0 0 1 768 896H448A192 192 0 0 1 256 704V576A192 192 0 0 1 448 384h192zM384 640v-64h192a128 128 0 0 0 128-128V320a128 128 0 0 0-128-128H256a128 128 0 0 0-128 128v128a128 128 0 0 0 64 110.848v70.272C105.152 583.68 64 520.96 64 448V320A192 192 0 0 1 256 128h320A192 192 0 0 1 768 320v128A192 192 0 0 1 576 640H384z"/></svg></span></span> Live Telemetry
+        </div>
+        <div class="nav-item" :class="{active: currentPage==='camerafeed'}" @click="currentPage='camerafeed'">
+          <span class="nav-icon"><span class="icon-svg"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M896 256H704l-64-64H384l-64 64H128a64 64 0 0 0-64 64v448a64 64 0 0 0 64 64h768a64 64 0 0 0 64-64V320a64 64 0 0 0-64-64zm0 512H128V320h188.8l64-64h262.4l64 64H896v448zM512 384a160 160 0 1 0 0 320 160 160 0 0 0 0-320zm0 256a96 96 0 1 1 0-192 96 96 0 0 1 0 192z"/></svg></span></span> Camera Feed
+        </div>
+        <div class="nav-item" :class="{active: currentPage==='alerts'}" @click="currentPage='alerts'">
+          <span class="nav-icon"><span class="icon-svg"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M512 64a64 64 0 0 1 64 64v64C680.96 213.12 768 316.032 768 438.4V576l64 64v64H192v-64l64-64V438.4C256 316.032 343.04 213.12 448 192V128a64 64 0 0 1 64-64zm192 512V438.4C704 345.216 617.6 256 512 256s-192 89.216-192 182.4V576h384zM448 832h128a64 64 0 1 1-128 0z"/></svg></span></span> Alerts
+          <span class="pill pill-danger" v-if="activeAlerts.length" style="margin-left:auto">{{activeAlerts.length}}</span>
+        </div>
+
+        <div class="nav-section-label">Settings</div>
+        <div class="nav-item" :class="{active: currentPage==='missionlog'}" @click="currentPage='missionlog'">
+          <span class="nav-icon"><span class="icon-svg"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M128 128h768v768H128V128zm64 64v640h640V192H256z"/><path d="M384 384h256v64H384zM384 512h256v64H384zM384 640h128v64H384zM320 384h32v64h-32zM320 512h32v64h-32zM320 640h32v64h-32z"/></svg></span></span> Mission Log
+        </div>
+        <div class="nav-item" :class="{active: currentPage==='settings'}" @click="currentPage='settings'">
+          <span class="nav-icon"><span class="icon-svg"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M600.704 64a32 32 0 0 1 30.464 22.208l35.2 109.376c14.784 7.232 28.928 15.36 42.432 24.512l112.384-24.192a32 32 0 0 1 34.432 15.36L944.32 364.8a32 32 0 0 1-4.032 37.504l-77.12 85.12a357.12 357.12 0 0 1 0 49.024l77.12 85.248a32 32 0 0 1 4.032 37.504l-88.704 153.6a32 32 0 0 1-34.432 15.296L708.8 803.904c-13.44 9.088-27.648 17.28-42.368 24.512l-35.264 109.376A32 32 0 0 1 600.704 960H423.296a32 32 0 0 1-30.464-22.208L357.696 828.48a351.616 351.616 0 0 1-42.56-24.64l-112.32 24.256a32 32 0 0 1-34.432-15.36L79.68 659.2a32 32 0 0 1 4.032-37.504l77.12-85.248a357.12 357.12 0 0 1 0-48.896l-77.12-85.248A32 32 0 0 1 79.68 364.8l88.704-153.6a32 32 0 0 1 34.432-15.296l112.32 24.256c13.568-9.152 27.776-17.408 42.56-24.64l35.2-109.312A32 32 0 0 1 423.232 64H600.64zm-23.424 64H446.72l-36.352 113.088-24.512 11.968a294.113 294.113 0 0 0-34.816 20.096l-22.656 15.36-116.224-25.088-65.28 113.152 79.68 88.192-1.92 27.136a293.12 293.12 0 0 0 0 40.192l1.92 27.136-79.808 88.192 65.344 113.152 116.224-25.024 22.656 15.296a294.113 294.113 0 0 0 34.816 20.096l24.512 11.968L446.72 896h130.688l36.48-113.088 24.448-11.968a288.282 288.282 0 0 0 34.752-20.096l22.592-15.296 116.288 25.024 65.28-113.152-79.744-88.192 1.92-27.136a293.12 293.12 0 0 0 0-40.256l-1.92-27.136 79.808-88.128-65.344-113.152-116.288 24.96-22.592-15.232a287.616 287.616 0 0 0-34.752-20.096l-24.448-12.032L577.344 128zM512 320a192 192 0 1 1 0 384 192 192 0 0 1 0-384zm0 64a128 128 0 1 0 0 256 128 128 0 0 0 0-256z"/></svg></span></span> Settings
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="drone-status">
+          <span class="status-dot" :class="isLiveConnected?'online':apiConnected?'warning':'offline'"></span>
+          <span>{{ isLiveConnected ? 'Drone Connected' : apiConnected ? 'API Online' : 'Offline' }}</span>
+        </div>
+        <div style="font-size:0.68rem; color:var(--clr-text-dim); margin-top:0.35rem">
+          Flight #{{ flightCount }}
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="main-content" :data-theme="theme">
+      <!-- Top bar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <h1 class="page-title">{{ pageTitle }}</h1>
+        </div>
+        <div class="topbar-right">
+          <span class="pill" :class="dataSourcePillClass">{{ dataSourceLabel }}</span>
+          <span class="pill pill-neutral" v-if="csvData.length">{{ csvData.length }} rows</span>
+          <button class="btn btn-sm" @click="theme = theme==='dark'?'light':'dark'">
+            <span class="icon-svg" v-if="theme==='dark'"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M512 704a192 192 0 1 0 0-384 192 192 0 0 0 0 384zm0 64a256 256 0 1 1 0-512 256 256 0 0 1 0 512zm0-704a32 32 0 0 1 32 32v64a32 32 0 0 1-64 0V96a32 32 0 0 1 32-32zm0 768a32 32 0 0 1 32 32v64a32 32 0 0 1-64 0v-64a32 32 0 0 1 32-32zM195.2 195.2a32 32 0 0 1 45.248 0l45.248 45.248a32 32 0 1 1-45.248 45.248L195.2 240.448a32 32 0 0 1 0-45.248zm543.104 543.104a32 32 0 0 1 45.248 0l45.248 45.248a32 32 0 0 1-45.248 45.248l-45.248-45.248a32 32 0 0 1 0-45.248zM64 512a32 32 0 0 1 32-32h64a32 32 0 0 1 0 64H96a32 32 0 0 1-32-32zm768 0a32 32 0 0 1 32-32h64a32 32 0 0 1 0 64h-64a32 32 0 0 1-32-32zM195.2 828.8a32 32 0 0 1 0-45.248l45.248-45.248a32 32 0 0 1 45.248 45.248L240.448 828.8a32 32 0 0 1-45.248 0zm543.104-543.104a32 32 0 0 1 0-45.248l45.248-45.248a32 32 0 0 1 45.248 45.248l-45.248 45.248a32 32 0 0 1-45.248 0z"/></svg></span>
+            <span class="icon-svg" v-else><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M240.448 240.448a384 384 0 1 0 559.424 525.696 448 448 0 0 1-559.424-525.696zm-90.56 45.248C67.008 376.192 32 446.72 32 524.8 32 737.344 222.208 928 434.752 928c78.08 0 148.608-35.008 239.104-117.888a447.36 447.36 0 0 1-524.032-524.416z"/></svg></span>
+          </button>
+          <button class="btn btn-sm btn-primary" @click="refreshData"><span class="icon-svg"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M771.776 794.88A384 384 0 0 1 128 512h64a320 320 0 0 0 555.712 216.448H640v-64h256v256h-64v-134.4a383.808 383.808 0 0 1-60.224 20.832zM276.288 229.12A384 384 0 0 1 896 512h-64a320 320 0 0 0-555.712-216.448H384v64H128v-256h64v134.4a383.808 383.808 0 0 1 84.288-8.832z"/></svg></span> Refresh</button>
+        </div>
+      </header>
+
+      <!-- Content -->
+      <div class="content-area">
+
+        <!-- ===== DASHBOARD ===== -->
+        <div v-if="currentPage==='dashboard'" class="fade-in">
+          <!-- Stats -->
+          <div class="stats-grid section-gap">
+            <div class="stat-card">
+              <div class="stat-label">Zones Monitored</div>
+              <div class="stat-value">{{ zoneCount }}</div>
+              <div class="stat-change neutral">{{ ghRows }}×{{ ghCols }} grid</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Avg Temperature</div>
+              <div class="stat-value">{{ avgTemp }}°F</div>
+              <div class="stat-change" :class="tempTrendClass">{{ tempTrend }}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Avg Pressure</div>
+              <div class="stat-value">{{ avgPressure }} hPa</div>
+              <div class="stat-change neutral">Station pressure</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Stress Zones</div>
+              <div class="stat-value" :style="{color: stressZoneCount>0?'var(--clr-danger)':'var(--clr-success)'}">{{ stressZoneCount }}</div>
+              <div class="stat-change" :class="stressZoneCount>0?'down':'up'">{{ stressZoneCount>0?'Action needed':'All healthy' }}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Data Points</div>
+              <div class="stat-value">{{ csvData.length }}</div>
+              <div class="stat-change neutral">{{ dataSourceLabel }}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Last Scouting</div>
+              <div class="stat-value" style="font-size:1rem">{{ lastScoutingTime }}</div>
+              <div class="stat-change neutral">Flight #{{ flightCount }}</div>
+            </div>
+          </div>
+
+          <!-- Quick Actions -->
+          <div class="card section-gap" style="border-color:var(--clr-border)">
+            <div class="card-body" style="padding:0.85rem 1.25rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
+              <div style="display:flex;align-items:center;gap:0.75rem">
+                <span class="icon-svg" style="font-size:1.2rem;color:var(--clr-accent)"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M512 64L388.8 388.8 64 512l324.8 123.2L512 960l123.2-324.8L960 512 635.2 388.8 512 64z"/></svg></span>
+                <div>
+                  <div style="font-size:0.85rem;font-weight:600;color:var(--clr-text)">Quick Hover Test</div>
+                  <div style="font-size:0.72rem;color:var(--clr-text-dim)">Takeoff, hold position, and land — for rapid debugging</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:0.5rem">
+                <div style="display:flex;align-items:center;gap:0.3rem">
+                  <label style="font-size:0.72rem;color:var(--clr-text-dim)">Alt (ft):</label>
+                  <input type="number" v-model.number="hoverTestAlt" min="0.5" max="5" step="0.5" style="width:60px;padding:0.25rem 0.4rem;font-size:0.78rem">
+                </div>
+                <div style="display:flex;align-items:center;gap:0.3rem">
+                  <label style="font-size:0.72rem;color:var(--clr-text-dim)">Sec:</label>
+                  <input type="number" v-model.number="hoverTestDur" min="3" max="60" step="1" style="width:55px;padding:0.25rem 0.4rem;font-size:0.78rem">
+                </div>
+                <button class="btn btn-sm btn-primary" @click="startHoverTest" :disabled="hoverTestRunning">
+                  {{ hoverTestRunning ? 'Running...' : 'Launch' }}
+                </button>
+              </div>
+              <div v-if="hoverTestMsg" style="width:100%;font-size:0.75rem;margin-top:0.1rem" :style="{color: hoverTestMsg.startsWith('Error') ? 'var(--clr-danger)' : 'var(--clr-success)'}">{{ hoverTestMsg }}</div>
+            </div>
+          </div>
+
+          <!-- Main grid -->
+          <div class="grid-2-1 section-gap">
+            <!-- Chart -->
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Telemetry Overview</div>
+                  <div class="card-subtitle">Temperature & pressure over time</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;justify-content:flex-end">
+                  <span style="font-size:0.72rem;color:var(--clr-text-dim);font-weight:600;text-transform:uppercase;letter-spacing:0.06em">Date:</span>
+                  <select v-model="selectedDashboardDate" @change="onDashboardDateChange" style="width:170px">
+                    <option value="">Latest</option>
+                    <option v-for="d in availableDates" :key="d" :value="d">{{ d }}</option>
+                  </select>
+                  <span style="font-size:0.72rem;color:var(--clr-text-dim);font-weight:600;text-transform:uppercase;letter-spacing:0.06em">CSV:</span>
+                  <select v-model="selectedDashboardCsv" @change="onDashboardCsvChange" style="width:220px">
+                    <option value="">Latest CSV</option>
+                    <option v-for="f in dashboardCsvFiles" :key="'dash-file-'+f" :value="f">{{ f }}</option>
+                  </select>
+                  <div class="tabs">
+                  <button class="tab-item" :class="{active:dashChart==='temp'}" @click="dashChart='temp'">Temp</button>
+                  <button class="tab-item" :class="{active:dashChart==='pressure'}" @click="dashChart='pressure'">Pressure</button>
+                  <button class="tab-item" :class="{active:dashChart==='both'}" @click="dashChart='both'">Both</button>
+                  </div>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="chart-container">
+                  <canvas ref="dashboardChart"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <!-- Alerts summary -->
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Recent Alerts</div>
+                  <div class="card-subtitle">Last 24 hours</div>
+                </div>
+              </div>
+              <div class="card-body" style="max-height:360px; overflow-y:auto">
+                <div v-if="activeAlerts.length === 0" class="empty-state" style="padding:2rem">
+                  <div class="empty-state-icon"><span class="icon-svg" style="font-size:36px;color:var(--clr-success)"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M512 896a384 384 0 1 0 0-768 384 384 0 0 0 0 768zm0 64a448 448 0 1 1 0-896 448 448 0 0 1 0 896z"/><path d="M726.4 379.2L454.4 651.2l-158.4-158.4 45.248-45.248L454.4 560.704l226.752-226.752L726.4 379.2z"/></svg></span></div>
+                  <div class="empty-state-title">All Clear</div>
+                  <div class="empty-state-desc">No active stress alerts</div>
+                </div>
+                <div v-for="alert in activeAlerts" :key="alert.id" class="alert-item">
+                  <span class="alert-icon"><span class="icon-svg" :style="{color: alert.iconColor, fontSize: '14px'}"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896zm0 640a48 48 0 1 0 0 96 48 48 0 0 0 0-96zm-48-352v288a48 48 0 0 0 96 0V352a48 48 0 0 0-96 0z"/></svg></span></span>
+                  <div class="alert-body">
+                    <div class="alert-title">{{ alert.title }}</div>
+                    <div class="alert-desc">{{ alert.desc }}</div>
+                  </div>
+                  <div class="alert-time">{{ alert.time }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mini heatmap -->
+          <div class="card section-gap">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Zone Health Overview</div>
+                <div class="card-subtitle">Click a zone for details</div>
+              </div>
+              <div style="display:flex;gap:0.5rem;align-items:center">
+                <select v-model="heatmapMetric" style="width:180px">
+                  <option value="temperature">Temperature</option>
+                  <option value="pressure">Pressure</option>
+                  <option value="health">Health Score</option>
+                </select>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="heatmap-grid" :style="heatmapGridStyle">
+                <div v-for="zone in zoneGrid" :key="zone.id"
+                  class="heatmap-cell" :class="{alert: zone.isStress}"
+                  :style="{background: zone.color}"
+                  @click="selectZone(zone)">
+                  <span class="zone-label">{{ zone.label }}</span>
+                  <span class="zone-val">{{ zone.displayVal }}</span>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:0.5rem 0.5rem 0;font-size:0.68rem;color:var(--clr-text-dim)">
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--clr-success);margin-right:4px"></span>Healthy</span>
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--clr-warning);margin-right:4px"></span>Watch</span>
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--clr-danger);margin-right:4px"></span>Stress</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== HEATMAP ===== -->
+        <div v-if="currentPage==='heatmap'" class="fade-in">
+          <div class="grid-2-1 section-gap">
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Zone Health Map</div>
+                  <div class="card-subtitle">{{ ghRows }}×{{ ghCols }} greenhouse grid</div>
+                </div>
+                <div style="display:flex;gap:0.5rem">
+                  <select v-model="heatmapMetric" style="width:160px">
+                    <option value="temperature">Temperature</option>
+                    <option value="pressure">Pressure</option>
+                    <option value="health">Health Score</option>
+                  </select>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="heatmap-grid" :style="heatmapGridStyle">
+                  <div v-for="zone in zoneGrid" :key="zone.id"
+                    class="heatmap-cell" :class="{alert: zone.isStress}"
+                    :style="{background: zone.color}"
+                    @click="selectZone(zone)">
+                    <span class="zone-label">{{ zone.label }}</span>
+                    <span class="zone-val">{{ zone.displayVal }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Zone Detail</div>
+              </div>
+              <div class="card-body" v-if="selectedZone">
+                <div class="zone-detail-header">
+                  <div class="zone-detail-id">{{ selectedZone.label }}</div>
+                  <span class="zone-tag" :class="selectedZone.statusClass">{{ selectedZone.statusText }}</span>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+                  <div class="stat-card">
+                    <div class="stat-label">Temperature</div>
+                    <div class="stat-value" style="font-size:1.1rem">{{ selectedZone.hasData ? selectedZone.temp.toFixed(1) + '°F' : '—' }}</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">Pressure</div>
+                    <div class="stat-value" style="font-size:1.1rem">{{ selectedZone.hasData ? selectedZone.pressure.toFixed(1) : '—' }}</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">Health Score</div>
+                    <div class="stat-value" style="font-size:1.1rem">{{ selectedZone.hasData ? selectedZone.health.toFixed(0) + '%' : '—' }}</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">Disease Risk</div>
+                    <div class="stat-value" style="font-size:1.1rem">{{ selectedZone.hasData ? (selectedZone.diseaseRisk*100).toFixed(0) + '%' : '—' }}</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">LAI / Canopy</div>
+                    <div class="stat-value" style="font-size:1.1rem">{{ selectedZone.hasData && selectedZone.lai != null ? selectedZone.lai.toFixed(1) + ' cm²' : '—' }}</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">Samples</div>
+                    <div class="stat-value" style="font-size:1.1rem">{{ selectedZone.count }}</div>
+                  </div>
+                </div>
+                <div style="margin-top:1rem; font-size:0.8rem; color:var(--clr-text-muted)">
+                  <strong>ML Assessment:</strong>
+                  {{ selectedZone.modelLabel }} — {{ selectedZone.modelNotes }}
+                </div>
+                <div style="margin-top:0.65rem; font-size:0.8rem; color:var(--clr-text-muted)">
+                  <strong>24h Prediction:</strong>
+                  {{ selectedZone.diseaseRisk < 0.38 && selectedZone.health > 70 ? 'Expected to remain stable' : selectedZone.diseaseRisk < 0.65 && selectedZone.health > 40 ? 'Monitor closely — possible decline' : 'High risk — recommend immediate inspection' }}
+                </div>
+                <div style="margin-top:0.65rem; font-size:0.8rem; color:var(--clr-text-muted)">
+                  <strong>Day-over-Day:</strong>
+                  <span class="day-change" :class="selectedZone.dailyChange > 0.5 ? 'positive' : selectedZone.dailyChange < -0.5 ? 'negative' : 'flat'">
+                    {{ selectedZone.hasData ? (selectedZone.dailyChange > 0 ? '+' : '') + selectedZone.dailyChange.toFixed(1) + '% health' : 'No data' }}
+                  </span>
+                </div>
+              </div>
+              <div class="card-body" v-else>
+                <div class="empty-state">
+                  <div class="empty-state-icon"><span class="icon-svg" style="font-size:36px;color:var(--clr-text-dim)"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M160 160h256v256H160V160zm0 448h256v256H160V608zm448-448h256v256H608V160zm0 448h256v256H608V608z"/></svg></span></div>
+                  <div class="empty-state-title">Select a zone</div>
+                  <div class="empty-state-desc">Click on any zone in the map to view detailed metrics</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== TIME SERIES ===== -->
+        <div v-if="currentPage==='timeseries'" class="fade-in">
+          <div class="card section-gap">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Time-Series Analysis</div>
+                <div class="card-subtitle">Select metrics to plot</div>
+              </div>
+              <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+                <button v-for="col in numericColumns" :key="col"
+                  class="btn btn-sm" :class="{'btn-primary': selectedMetrics.includes(col)}"
+                  @click="toggleMetric(col)">
+                  {{ col }}
+                </button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="chart-container" style="height:420px">
+                <canvas ref="timeseriesChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== FLIGHT PATH ===== -->
+        <div v-if="currentPage==='flightpath'" class="fade-in">
+          <div class="card section-gap">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Flight Path Visualization</div>
+                <div class="card-subtitle">Lighthouse-based XY positioning</div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div v-if="hasPositionData">
+                <div class="chart-container" style="height:420px">
+                  <canvas ref="flightPathChart"></canvas>
+                </div>
+              </div>
+              <div v-else class="empty-state">
+                <div class="empty-state-icon"><span class="icon-svg" style="font-size:36px;color:var(--clr-text-dim)"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M480 32L96 512l384 480 384-480L480 32zm0 132.48L766.72 512 480 859.52 193.28 512 480 164.48z"/><path d="M480 512m-64 0a64 64 0 1 0 128 0 64 64 0 1 0-128 0z"/></svg></span></div>
+                <div class="empty-state-title">No Position Data</div>
+                <div class="empty-state-desc">Flight path visualization requires Lighthouse XY columns (e.g., lh_x_m, lh_y_m). These will auto-enable once position data is in your CSV logs.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== PREDICTIONS ===== -->
+        <div v-if="currentPage==='predictions'" class="fade-in">
+          <div class="card section-gap">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Crop Health Forecast</div>
+                <div class="card-subtitle">Integrated BiGRU disease-risk + LAI/canopy-vigor model logic</div>
+              </div>
+              <span class="pill pill-neutral">Models: BiGRU + LAI</span>
+            </div>
+            <div class="card-body">
+              <div style="margin-bottom:1rem;font-size:0.85rem;color:var(--clr-text-muted)">
+                {{ mlModelSummary }}. Forecast scores use the loaded drone CSV/API telemetry and optional canopy/LAI columns when present.
+              </div>
+              <div class="prediction-timeline">
+                <div v-for="slot in predictionSlots" :key="slot.time" class="prediction-slot">
+                  <div class="time">{{ slot.time }}</div>
+                  <div class="score" :style="{color: slot.color}">{{ slot.score }}%</div>
+                  <div class="label" :style="{color: slot.color}">{{ slot.label }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid-2-1 section-gap">
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Zone Risk Assessment</div>
+              </div>
+              <div class="card-body">
+                <div class="heatmap-grid" :style="heatmapGridStyle">
+                  <div v-for="zone in predictedZoneGrid" :key="zone.id"
+                    class="heatmap-cell" :class="{alert: zone.isStress}"
+                    :style="{background: zone.color}"
+                    @click="selectZone(zone)">
+                    <span class="zone-label">{{ zone.label }}</span>
+                    <span class="zone-val">{{ zone.displayVal }}</span>
+                  </div>
+                </div>
+                <div style="font-size:0.78rem;color:var(--clr-text-dim);margin-top:0.75rem">
+                  Disease risk is derived from recent temperature sequence behavior, pressure/air-density context, battery/altitude telemetry quality, and LAI/canopy proxy features when available.
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Highest Risk Zones</div>
+                  <div class="card-subtitle">Prediction-guided scouting priority</div>
+                </div>
+              </div>
+              <div class="card-body">
+                <div v-if="!topRiskZones.length" class="empty-state" style="padding:2rem">
+                  <div class="empty-state-title">No model input yet</div>
+                  <div class="empty-state-desc">Load drone CSV/API data to generate zone-level crop health risks.</div>
+                </div>
+                <div v-for="zone in topRiskZones" :key="'risk-'+zone.id" class="alert-item">
+                  <span class="alert-icon" :style="{color: zone.diseaseRisk >= 0.65 ? 'var(--clr-danger)' : zone.diseaseRisk >= 0.38 ? 'var(--clr-warning)' : 'var(--clr-success)'}">●</span>
+                  <div class="alert-body">
+                    <div class="alert-title">{{ zone.label }} — {{ zone.modelLabel }}</div>
+                    <div class="alert-desc">Health {{ zone.health.toFixed(0) }}% · Disease risk {{ (zone.diseaseRisk*100).toFixed(0) }}% · {{ zone.modelNotes }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== RAW DATA ===== -->
+        <div v-if="currentPage==='data'" class="fade-in">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Raw Data Table</div>
+                <div class="card-subtitle">{{ csvData.length }} records loaded</div>
+              </div>
+              <div style="display:flex;gap:0.5rem">
+                <label class="btn btn-sm" style="cursor:pointer">
+                  <span class="icon-svg"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M878.08 448H241.92l-96 384h636.16l96-384zM832 384v-64H485.76L357.504 192H128v448l57.6-256H960l-128 512H96a32 32 0 0 1-32-32V160a32 32 0 0 1 32-32h287.872l128.384 128H864a32 32 0 0 1 32 32v96h-64z"/></svg></span> Load CSV
+                  <input type="file" accept=".csv" @change="handleCSVUpload" style="display:none">
+                </label>
+                <button class="btn btn-sm" @click="loadFromAPI">Load from API</button>
+              </div>
+            </div>
+            <div class="card-body-flush">
+              <div v-if="csvData.length" class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th v-for="col in csvColumns" :key="col">{{ col }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(row, i) in paginatedData" :key="i">
+                      <td v-for="col in csvColumns" :key="col">{{ row[col] ?? '—' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-else class="empty-state">
+                <div class="empty-state-icon"><span class="icon-svg" style="font-size:36px;color:var(--clr-text-dim)"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M832 384H576V128H192v768h640V384zm-26.496-64L640 154.496V320h165.504zM160 64h480l256 256v608a32 32 0 0 1-32 32H160a32 32 0 0 1-32-32V96a32 32 0 0 1 32-32zm160 448h384v64H320v-64zm0 192h384v64H320v-64zm0-384h160v64H320v-64z"/></svg></span></div>
+                <div class="empty-state-title">No Data Loaded</div>
+                <div class="empty-state-desc">Upload a CSV file or click "Load Demo Data" to get started.</div>
+              </div>
+            </div>
+            <div v-if="csvData.length" style="padding:0.75rem 1.25rem;border-top:1px solid var(--clr-border-subtle);display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:0.78rem;color:var(--clr-text-dim)">Page {{ currentDataPage }} of {{ totalDataPages }}</span>
+              <div style="display:flex;gap:0.4rem">
+                <button class="btn btn-sm" @click="currentDataPage=Math.max(1,currentDataPage-1)" :disabled="currentDataPage<=1">← Prev</button>
+                <button class="btn btn-sm" @click="currentDataPage=Math.min(totalDataPages,currentDataPage+1)" :disabled="currentDataPage>=totalDataPages">Next →</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== COMPARISON ===== -->
+        <div v-if="currentPage==='comparison'" class="fade-in">
+          <div class="card section-gap">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Run Comparison</div>
+                <div class="card-subtitle">Compare multiple flight runs side-by-side across all sensor metrics</div>
+              </div>
+              <div style="display:flex;gap:0.5rem;align-items:flex-start;flex-wrap:wrap;justify-content:flex-end">
+                <div style="display:flex;gap:0.35rem;align-items:center;flex-wrap:wrap;max-height:78px;overflow-y:auto;padding-right:4px">
+                <div v-for="slot in comparisonSelections" :key="'slot-'+slot.id" style="display:flex;gap:0.35rem;align-items:center">
+                  <select v-model="slot.date" @change="onComparisonDateChange(slot)" style="width:125px">
+                    <option value="">Date</option>
+                    <option v-for="d in availableDates" :key="'slot-'+slot.id+'-d-'+d" :value="d">{{ d }}</option>
+                  </select>
+                  <select v-model="slot.file" @change="onComparisonSelectionChange" style="width:175px">
+                    <option value="">CSV</option>
+                    <option v-for="f in getComparisonFileOptions(slot)" :key="'slot-'+slot.id+'-f-'+f" :value="f">{{ f }}</option>
+                  </select>
+                  <button v-if="comparisonSelections.length>2" class="btn btn-sm" @click="removeComparisonSlot(slot.id)">−</button>
+                </div>
+                </div>
+                <button class="btn btn-sm" @click="addComparisonSlot" :disabled="!canAddComparisonSlot">+ Comparator</button>
+                <span style="font-size:0.72rem;color:var(--clr-text-dim)">{{ comparisonSelections.length }}/{{ MAX_COMPARATORS }}</span>
+                <span v-for="run in filteredComparisonRuns" :key="run.name + '-' + (run.sourceDate || 'legacy')" class="pill pill-neutral" style="font-size:0.68rem">
+                  {{ run.name.length > 20 ? run.name.slice(0,20)+'…' : run.name }}
+                </span>
+              </div>
+            </div>
+            <div class="card-body">
+              <div v-if="filteredComparisonRuns.length<2" class="empty-state">
+                <div class="empty-state-icon"><span class="icon-svg" style="font-size:36px;color:var(--clr-text-dim)"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M352 160h320a320 320 0 1 1 0 640H352a320 320 0 1 1 0-640zm0 64a256 256 0 1 0 0 512 256 256 0 0 0 0-512zm0 64a192 192 0 1 1 0 384 192 192 0 0 1 0-384z"/></svg></span></div>
+                <div class="empty-state-title">Select at least 2 CSV runs</div>
+                <div class="empty-state-desc">Pick date and CSV in the selectors above. You can compare two CSV files from the same date.</div>
+              </div>
+              <div v-else>
+                <div class="tabs" style="margin-bottom:1rem">
+                  <button class="tab-item" :class="{active:comparisonView==='chart'}" @click="comparisonView='chart'">Overlay Chart</button>
+                  <button class="tab-item" :class="{active:comparisonView==='stats'}" @click="comparisonView='stats'">Stats Summary</button>
+                  <button class="tab-item" :class="{active:comparisonView==='delta'}" @click="comparisonView='delta'">Run Delta</button>
+                </div>
+
+                <!-- ===== CHART VIEW with metric selector ===== -->
+                <div v-if="comparisonView==='chart'">
+                  <div style="margin-bottom:0.75rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+                    <span style="font-size:0.75rem;color:var(--clr-text-dim);font-weight:600;text-transform:uppercase;letter-spacing:0.06em">Metric:</span>
+                    <select v-model="comparisonMetric" @change="$nextTick(()=>updateComparisonChart())"
+                            style="background:var(--clr-surface-2);border:1px solid var(--clr-border);color:var(--clr-text);padding:0.35rem 0.6rem;border-radius:var(--radius-sm);font-size:0.8rem;font-family:var(--font-body);min-width:200px">
+                      <optgroup v-for="(metrics, group) in groupedComparisonMetrics" :key="group" :label="group">
+                        <option v-for="m in metrics" :key="m.key" :value="m.key">{{ m.label }} ({{ m.unit }})</option>
+                      </optgroup>
+                    </select>
+                    <span style="font-size:0.72rem;color:var(--clr-text-dim)">Showing: {{ activeComparisonMetricLabel }}</span>
+                  </div>
+                  <div class="chart-container" style="height:400px">
+                    <canvas ref="comparisonChart"></canvas>
+                  </div>
+                </div>
+
+                <!-- ===== STATS VIEW — expanded ===== -->
+                <div v-if="comparisonView==='stats'">
+                  <div v-for="run in comparisonRunStats" :key="run.name + '-' + (run.sourceDate || 'legacy')" style="margin-bottom:1.5rem">
+                    <h4 style="font-size:0.85rem;font-weight:600;margin-bottom:0.5rem;color:var(--clr-text)">{{ run.name }}</h4>
+                    <!-- Row 1: Overview -->
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;margin-bottom:0.5rem">
+                      <div class="stat-card">
+                        <div class="stat-label">Data Points</div>
+                        <div class="stat-value" style="font-size:1rem">{{ run.rowCount }}</div>
+                      </div>
+                      <div class="stat-card">
+                        <div class="stat-label">Duration</div>
+                        <div class="stat-value" style="font-size:1rem">{{ run.duration }}</div>
+                      </div>
+                      <div class="stat-card">
+                        <div class="stat-label">Battery Range</div>
+                        <div class="stat-value" style="font-size:1rem">{{ run.battery ? run.battery.min.toFixed(2) + ' – ' + run.battery.max.toFixed(2) + ' V' : '—' }}</div>
+                      </div>
+                    </div>
+                    <!-- Row 2: Temperature -->
+                    <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--clr-text-dim);font-weight:600;padding:0.5rem 0 0.3rem;border-top:1px solid var(--clr-border-subtle)">Temperature</div>
+                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.5rem;margin-bottom:0.5rem">
+                      <div class="stat-card">
+                        <div class="stat-label">Avg Corrected</div>
+                        <div class="stat-value" style="font-size:1rem">{{ run.corrTemp ? run.corrTemp.avg.toFixed(1) + '°F' : '—' }}</div>
+                        <div class="stat-change neutral" v-if="run.corrTemp">{{ run.corrTemp.min.toFixed(1) }} – {{ run.corrTemp.max.toFixed(1) }}°F</div>
+                      </div>
+                      <div class="stat-card">
+                        <div class="stat-label">Avg Raw</div>
+                        <div class="stat-value" style="font-size:1rem">{{ run.rawTemp ? run.rawTemp.avg.toFixed(1) + '°F' : '—' }}</div>
+                        <div class="stat-change neutral" v-if="run.rawTemp">{{ run.rawTemp.min.toFixed(1) }} – {{ run.rawTemp.max.toFixed(1) }}°F</div>
+                      </div>
+                      <div class="stat-card">
+                        <div class="stat-label">Ambient Est</div>
+                        <div class="stat-value" style="font-size:1rem">{{ run.ambientEst ? run.ambientEst.avg.toFixed(1) + '°F' : '—' }}</div>
+                      </div>
+                      <div class="stat-card">
+                        <div class="stat-label">Avg RoC</div>
+                        <div class="stat-value" style="font-size:1rem">{{ run.roc ? run.roc.avg.toFixed(3) + '°F/s' : '—' }}</div>
+                      </div>
+                    </div>
+                    <!-- Row 3: Atmosphere -->
+                    <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--clr-text-dim);font-weight:600;padding:0.5rem 0 0.3rem;border-top:1px solid var(--clr-border-subtle)">Atmosphere</div>
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;margin-bottom:0.5rem">
+                      <div class="stat-card">
+                        <div class="stat-label">Avg Station Pressure</div>
+                        <div class="stat-value" style="font-size:1rem">{{ run.pressure ? run.pressure.avg.toFixed(1) + ' hPa' : '—' }}</div>
+                        <div class="stat-change neutral" v-if="run.pressure">{{ run.pressure.min.toFixed(1) }} – {{ run.pressure.max.toFixed(1) }}</div>
+                      </div>
+                      <div class="stat-card">
+                        <div class="stat-label">Avg Sea Level (QFF)</div>
+                        <div class="stat-value" style="font-size:1rem">{{ run.seaPress ? run.seaPress.avg.toFixed(1) + ' hPa' : '—' }}</div>
+                      </div>
+                      <div class="stat-card">
+                        <div class="stat-label">Avg Air Density</div>
+                        <div class="stat-value" style="font-size:1rem">{{ run.density ? run.density.avg.toFixed(4) + ' kg/m³' : '—' }}</div>
+                      </div>
+                    </div>
+                    <!-- Row 4: Flight -->
+                    <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--clr-text-dim);font-weight:600;padding:0.5rem 0 0.3rem;border-top:1px solid var(--clr-border-subtle)">Flight</div>
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem">
+                      <div class="stat-card">
+                        <div class="stat-label">Altitude Range</div>
+                        <div class="stat-value" style="font-size:1rem">{{ run.altitude ? run.altitude.min.toFixed(1) + ' – ' + run.altitude.max.toFixed(1) + ' ft' : '—' }}</div>
+                      </div>
+                      <div class="stat-card">
+                        <div class="stat-label">Avg Altitude</div>
+                        <div class="stat-value" style="font-size:1rem">{{ run.altitude ? run.altitude.avg.toFixed(2) + ' ft' : '—' }}</div>
+                      </div>
+                      <div class="stat-card">
+                        <div class="stat-label">Avg Thrust</div>
+                        <div class="stat-value" style="font-size:1rem">{{ run.thrust ? run.thrust.avg.toFixed(0) : '—' }}</div>
+                        <div class="stat-change neutral" v-if="run.thrust">Max: {{ run.thrust.max.toFixed(0) }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ===== DELTA VIEW — side-by-side diff ===== -->
+                <div v-if="comparisonView==='delta' && comparisonRunStats.length >= 2">
+                  <div style="font-size:0.78rem;color:var(--clr-text-muted);margin-bottom:0.75rem">
+                    Differences between <strong>{{ comparisonRunStats[0].name }}</strong> and <strong>{{ comparisonRunStats[1].name }}</strong>
+                  </div>
+                  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.5rem">
+                    <div class="stat-card" v-if="comparisonRunStats[0].corrTemp && comparisonRunStats[1].corrTemp">
+                      <div class="stat-label">Corrected Temp Δ</div>
+                      <div class="stat-value" style="font-size:1rem" :style="{color: Math.abs(comparisonRunStats[0].corrTemp.avg - comparisonRunStats[1].corrTemp.avg) > 2 ? 'var(--clr-warning)' : 'var(--clr-success)'}">
+                        {{ (comparisonRunStats[0].corrTemp.avg - comparisonRunStats[1].corrTemp.avg) > 0 ? '+' : '' }}{{ (comparisonRunStats[0].corrTemp.avg - comparisonRunStats[1].corrTemp.avg).toFixed(2) }}°F
+                      </div>
+                    </div>
+                    <div class="stat-card" v-if="comparisonRunStats[0].pressure && comparisonRunStats[1].pressure">
+                      <div class="stat-label">Pressure Δ</div>
+                      <div class="stat-value" style="font-size:1rem">
+                        {{ (comparisonRunStats[0].pressure.avg - comparisonRunStats[1].pressure.avg) > 0 ? '+' : '' }}{{ (comparisonRunStats[0].pressure.avg - comparisonRunStats[1].pressure.avg).toFixed(2) }} hPa
+                      </div>
+                    </div>
+                    <div class="stat-card" v-if="comparisonRunStats[0].altitude && comparisonRunStats[1].altitude">
+                      <div class="stat-label">Avg Altitude Δ</div>
+                      <div class="stat-value" style="font-size:1rem">
+                        {{ (comparisonRunStats[0].altitude.avg - comparisonRunStats[1].altitude.avg) > 0 ? '+' : '' }}{{ (comparisonRunStats[0].altitude.avg - comparisonRunStats[1].altitude.avg).toFixed(2) }} ft
+                      </div>
+                    </div>
+                    <div class="stat-card" v-if="comparisonRunStats[0].battery && comparisonRunStats[1].battery">
+                      <div class="stat-label">Avg Battery Δ</div>
+                      <div class="stat-value" style="font-size:1rem">
+                        {{ (comparisonRunStats[0].battery.avg - comparisonRunStats[1].battery.avg) > 0 ? '+' : '' }}{{ (comparisonRunStats[0].battery.avg - comparisonRunStats[1].battery.avg).toFixed(3) }} V
+                      </div>
+                    </div>
+                    <div class="stat-card" v-if="comparisonRunStats[0].density && comparisonRunStats[1].density">
+                      <div class="stat-label">Air Density Δ</div>
+                      <div class="stat-value" style="font-size:1rem">
+                        {{ (comparisonRunStats[0].density.avg - comparisonRunStats[1].density.avg) > 0 ? '+' : '' }}{{ (comparisonRunStats[0].density.avg - comparisonRunStats[1].density.avg).toFixed(5) }} kg/m³
+                      </div>
+                    </div>
+                    <div class="stat-card" v-if="comparisonRunStats[0].thrust && comparisonRunStats[1].thrust">
+                      <div class="stat-label">Avg Thrust Δ</div>
+                      <div class="stat-value" style="font-size:1rem">
+                        {{ (comparisonRunStats[0].thrust.avg - comparisonRunStats[1].thrust.avg) > 0 ? '+' : '' }}{{ (comparisonRunStats[0].thrust.avg - comparisonRunStats[1].thrust.avg).toFixed(0) }}
+                      </div>
+                    </div>
+                    <div class="stat-card">
+                      <div class="stat-label">Row Count Δ</div>
+                      <div class="stat-value" style="font-size:1rem">
+                        {{ comparisonRunStats[0].rowCount - comparisonRunStats[1].rowCount }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== FLIGHT CONTROL ===== -->
+        <div v-if="currentPage==='flight'" class="fade-in">
+          <div class="card section-gap">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Drone Flight Control</div>
+                <div class="card-subtitle">Launch approved Crazyflie flight scripts from the front end</div>
+              </div>
+              <div class="flight-status-row" style="margin-bottom:0">
+                <span class="pill" :class="flightApiOnline?'pill-success':'pill-danger'">{{ flightApiOnline ? 'FLIGHT CONTROL ONLINE' : 'FLIGHT CONTROL OFFLINE' }}</span>
+                <span class="pill" :class="flightRunning?'pill-warning':'pill-neutral'">{{ flightRunning ? 'SCRIPT RUNNING' : 'IDLE' }}</span>
+                <button class="btn btn-sm" @click="checkFlightApi">Refresh</button>
+                <button class="btn btn-sm" style="background:var(--clr-danger);color:white" :disabled="!flightRunning" @click="stopFlightScript">Stop Script</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div v-if="!flightApiOnline" class="offline-notice" style="margin-bottom:1rem">
+                <div class="offline-icon"><span style="font-size:1.2rem">🚁</span></div>
+                <div class="offline-title">Flight API Not Running</div>
+                <div class="offline-desc">Start the local flight launcher API in the same folder as waypoint_flight.py, hover_test.py, and lawnmower_flight.py.</div>
+                <div class="offline-hint">python3.11 telemetry_flight_api_server.py</div>
+              </div>
+
+              <div class="flight-status-row">
+                <div style="min-width:260px;flex:1">
+                  <label class="form-label">Crazyflie URI</label>
+                  <input type="text" v-model="flightUri" placeholder="radio://0/80/2M/E7E7E7E7E7">
+                </div>
+                <div style="width:140px">
+                  <label class="form-label">Hover Altitude (ft)</label>
+                  <input type="number" v-model.number="flightHoverAltFt" min="0.5" max="5" step="0.5">
+                </div>
+                <div style="width:160px">
+                  <label class="form-label">Ambient Temp</label>
+                  <input type="text" v-model="flightAmbientTemp" placeholder="74F">
+                </div>
+              </div>
+
+              <div class="flight-control-grid section-gap">
+                <div class="flight-script-card">
+                  <div class="flight-script-title">Waypoint Planner</div>
+                  <div class="flight-script-desc">Launches the 5×5 ft clickable waypoint tool. Use this for custom point-by-point flight paths.</div>
+                  <button class="btn btn-primary" :disabled="flightRunning" @click="launchFlightScript('waypoint')">Launch waypoint_flight.py</button>
+                </div>
+                <div class="flight-script-card">
+                  <div class="flight-script-title">Hover Test</div>
+                  <div class="flight-script-desc">Runs hover_test.py and feeds it the hover altitude in feet. Good for quick positioning and safety checks.</div>
+                  <button class="btn btn-primary" :disabled="flightRunning" @click="launchFlightScript('hover')">Run hover_test.py</button>
+                </div>
+                <div class="flight-script-card">
+                  <div class="flight-script-title">Lawnmower Flight</div>
+                  <div class="flight-script-desc">Runs lawnmower_flight.py and feeds it the ambient temperature value. Good for automated coverage flights.</div>
+                  <button class="btn btn-primary" :disabled="flightRunning" @click="launchFlightScript('lawnmower')">Run lawnmower_flight.py</button>
+                </div>
+              </div>
+
+              <div class="card" style="box-shadow:none">
+                <div class="card-header">
+                  <div>
+                    <div class="card-title">Flight Launcher Output</div>
+                    <div class="card-subtitle">Live stdout/stderr from the selected script</div>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="flight-output">{{ flightOutput || 'No flight script has been launched from this page yet.' }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== LIVE TELEMETRY ===== -->
+        <div v-if="currentPage==='livefeed'" class="fade-in">
+          <div class="card section-gap">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Live Telemetry</div>
+                <div class="card-subtitle">Real-time Crazyflie flight and environmental telemetry</div>
+              </div>
+              <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+                <span class="pill" :class="isLiveConnected?'pill-success':'pill-danger'">
+                  {{ isLiveConnected ? 'CONNECTED' : 'OFFLINE' }}
+                </span>
+                <span class="pill pill-neutral">{{ liveConnectionSummary }}</span>
+              </div>
+            </div>
+            <div class="card-body">
+              <template v-if="isLiveConnected">
+                <div class="stats-grid" style="margin-bottom:1rem">
+                  <div class="stat-card" style="border-color:var(--clr-border)">
+                    <div class="stat-label">Corrected Temperature</div>
+                    <div class="stat-value" style="font-size:1.35rem;color:var(--clr-accent)">{{ formatLiveNumber(liveCorrTemp, 1) }}°F</div>
+                    <div class="stat-change neutral">Primary environmental value</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">Raw Temperature</div>
+                    <div class="stat-value" style="font-size:1.2rem">{{ formatLiveNumber(liveRawTemp, 1) }}°F</div>
+                    <div class="stat-change neutral">Sensor before correction</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">Relative Altitude</div>
+                    <div class="stat-value" style="font-size:1.2rem">{{ formatLiveNumber(liveAltitude, 2) }} m</div>
+                    <div class="stat-change neutral">{{ formatLiveNumber(liveAltitudeFt, 2) }} ft AGL</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">Battery</div>
+                    <div class="stat-value" style="font-size:1.2rem" :style="batteryValueStyle">{{ formatLiveNumber(liveBattery, 2) }} V</div>
+                    <div class="stat-change neutral">{{ batteryPct }}% estimated</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">Station Pressure</div>
+                    <div class="stat-value" style="font-size:1.15rem">{{ formatLiveNumber(livePressure, 2) }} hPa</div>
+                    <div class="stat-change neutral">Sea level: {{ formatLiveNumber(liveSeaLevelPressure, 2) }} hPa</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">Air Density</div>
+                    <div class="stat-value" style="font-size:1.15rem">{{ formatLiveNumber(liveDensity, 4) }}</div>
+                    <div class="stat-change neutral">kg/m³</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">Ambient Estimate</div>
+                    <div class="stat-value" style="font-size:1.15rem">{{ formatLiveNumber(liveAmbientEst, 1) }}°F</div>
+                    <div class="stat-change neutral">Thermal model baseline</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">Rate of Change</div>
+                    <div class="stat-value" style="font-size:1.15rem">{{ formatSignedLiveNumber(liveRoc, 3) }}</div>
+                    <div class="stat-change neutral">°F/s</div>
+                  </div>
+                </div>
+
+                <div class="grid-2 section-gap">
+                  <div class="card" style="box-shadow:none">
+                    <div class="card-header">
+                      <div>
+                        <div class="card-title">Live Trend View</div>
+                        <div class="card-subtitle">Corrected temperature, raw temperature, and pressure</div>
+                      </div>
+                    </div>
+                    <div class="card-body">
+                      <div class="chart-container" style="height:360px">
+                        <canvas ref="liveChart"></canvas>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="card" style="box-shadow:none">
+                    <div class="card-header">
+                      <div>
+                        <div class="card-title">Status & Flight Diagnostics</div>
+                        <div class="card-subtitle">Thermal state machine and flight context</div>
+                      </div>
+                    </div>
+                    <div class="card-body">
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+                        <div class="stat-card">
+                          <div class="stat-label">State</div>
+                          <div class="stat-value" style="font-size:1rem">{{ liveStateDisplay }}</div>
+                        </div>
+                        <div class="stat-card">
+                          <div class="stat-label">Mode</div>
+                          <div class="stat-value" style="font-size:1rem">{{ liveModeDisplay }}</div>
+                        </div>
+                        <div class="stat-card" style="grid-column:1 / -1">
+                          <div class="stat-label">Event</div>
+                          <div class="stat-value" style="font-size:0.92rem;line-height:1.35">{{ liveEventDisplay }}</div>
+                        </div>
+                        <div class="stat-card">
+                          <div class="stat-label">Thrust</div>
+                          <div class="stat-value" style="font-size:1rem">{{ formatLiveInteger(liveThrust) }}</div>
+                        </div>
+                        <div class="stat-card">
+                          <div class="stat-label">Expected Raw Temp</div>
+                          <div class="stat-value" style="font-size:1rem">{{ formatLiveNumber(liveExpectedRaw, 1) }}°F</div>
+                        </div>
+                        <div class="stat-card">
+                          <div class="stat-label">Deviation</div>
+                          <div class="stat-value" style="font-size:1rem">{{ formatSignedLiveNumber(liveDeviation, 3) }}</div>
+                        </div>
+                        <div class="stat-card">
+                          <div class="stat-label">Thermal Offset</div>
+                          <div class="stat-value" style="font-size:1rem">{{ formatLiveNumber(liveThermalOffset, 3) }}°F</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <div v-else class="offline-notice">
+                <div class="offline-icon"><span class="icon-svg" style="font-size:1.3rem"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M640 384v64H448a128 128 0 0 0-128 128v128a128 128 0 0 0 128 128h320a128 128 0 0 0 128-128V576a128 128 0 0 0-64-110.848V394.88C918.848 440.32 960 503.04 960 576v128A192 192 0 0 1 768 896H448A192 192 0 0 1 256 704V576A192 192 0 0 1 448 384h192z"/></svg></span></div>
+                <div class="offline-title">Drone Not Connected</div>
+                <div class="offline-desc">Live telemetry requires an active connection to the Crazyflie drone via the API server.</div>
+                <div class="offline-hint">python api_server.py</div>
+                <button class="btn btn-sm" style="margin-top:1rem" @click="refreshData">Retry Connection</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== CAMERA FEED ===== -->
+        <div v-if="currentPage==='camerafeed'" class="fade-in">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Drone Camera — Live View</div>
+              </div>
+              <div style="display:flex;gap:0.5rem;align-items:center">
+                <span class="pill" :class="cameraConnected?'pill-success':'pill-danger'">{{ cameraConnected ? 'STREAMING' : 'OFFLINE' }}</span>
+                <button class="btn btn-sm" @click="cameraConnected=!cameraConnected" :disabled="!apiConnected">{{ cameraConnected ? 'Disconnect' : 'Connect' }}</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="camera-feed-container">
+                <!-- Connected state -->
+                <template v-if="cameraConnected">
+                  <div class="camera-overlay">
+                    <span class="rec-badge"><span class="rec-dot"></span> REC</span>
+                    <span class="zone-badge-overlay">Zone {{ cameraCurrentZone }}</span>
+                  </div>
+                  <div style="width:100%;height:100%;background:linear-gradient(135deg,#1a1a1a 0%,#2d2d2d 30%,#222 50%,#333 70%,#1e1e1e 100%);display:flex;align-items:center;justify-content:center">
+                    <div style="text-align:center;color:rgba(255,255,255,0.25)">
+                      <div style="font-size:3rem;margin-bottom:0.5rem">Loading...</div>
+
+                    </div>
+                  </div>
+                  <div class="camera-bottom-bar">
+                    <span class="cam-ts">{{ cameraTsDisplay }}</span>
+                  </div>
+                </template>
+                <!-- Offline state -->
+                <template v-else>
+                  <div class="camera-static"></div>
+                  <div class="feed-offline">
+                    <div class="feed-icon">📷</div>
+                    <div class="feed-label">Camera disconnected</div>
+                    <div style="font-size:0.72rem;color:var(--clr-text-dim)">{{ apiConnected ? 'Click Connect to start the camera stream' : 'Start the API server and connect the drone first' }}</div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== ALERTS ===== -->
+        <div v-if="currentPage==='alerts'" class="fade-in">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Alert Log</div>
+                <div class="card-subtitle">Active and resolved alerts</div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div v-for="alert in allAlerts" :key="alert.id" class="alert-item">
+                <span class="alert-icon"><span class="icon-svg" :style="{color: alert.iconColor, fontSize: '14px'}"><svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896zm0 640a48 48 0 1 0 0 96 48 48 0 0 0 0-96zm-48-352v288a48 48 0 0 0 96 0V352a48 48 0 0 0-96 0z"/></svg></span></span>
+                <div class="alert-body">
+                  <div class="alert-title">{{ alert.title }}</div>
+                  <div class="alert-desc">{{ alert.desc }}</div>
+                </div>
+                <div>
+                  <div class="alert-time">{{ alert.time }}</div>
+                  <span class="zone-tag" :class="alert.severity" style="margin-top:0.3rem">{{ alert.severityLabel }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== GREENHOUSE LAYOUT EDITOR ===== -->
+        <div v-if="false && currentPage==='greenhouse'" class="fade-in">
+          <div class="grid-2 section-gap">
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Greenhouse Zone Layout</div>
+                  <div class="card-subtitle">Click zones to define waypoints (x, y, z)</div>
+                </div>
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+                  <span class="pill pill-neutral">{{ ghRows }}×{{ ghCols }}</span>
+                  <span v-if="missionStatus.state !== 'idle'"
+                        class="pill"
+                        :class="missionStatus.state === 'running' ? 'pill-success'
+                              : missionStatus.state === 'cancelled' ? 'pill-danger'
+                              : missionStatus.state === 'done' ? 'pill-success'
+                              : 'pill-neutral'">
+                    {{ missionStatus.state.toUpperCase() }}
+                    <template v-if="missionStatus.total">
+                      {{ missionStatus.current_idx }}/{{ missionStatus.total }}
+                    </template>
+                  </span>
+                  <button class="btn btn-sm" @click="clearWaypoints"
+                          :disabled="missionBusy">Clear All</button>
+                  <button class="btn btn-sm" @click="exportWaypoints">Export CSV</button>
+                  <button class="btn btn-sm btn-primary"
+                          @click="executeMission"
+                          :disabled="!waypointList.length || missionBusy">
+                    {{ missionBusy ? 'Executing...' : 'Execute Mission' }}
+                  </button>
+                  <button v-if="missionBusy" class="btn btn-sm"
+                          style="background:var(--clr-danger);color:white"
+                          @click="cancelMission">Cancel</button>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="layout-editor-grid" :style="{gridTemplateColumns: 'repeat('+ghCols+', 1fr)'}">
+                  <div v-for="zone in layoutZones" :key="zone.id"
+                    class="layout-cell" :class="{selected: zone.hasWaypoint}"
+                    @click="toggleWaypoint(zone)">
+                    <span style="font-weight:600">{{ zone.label }}</span>
+                    <span class="cell-coord" v-if="zone.hasWaypoint">x:{{ zone.x.toFixed(2) }} y:{{ zone.y.toFixed(2) }}</span>
+                    <span class="cell-coord" v-else>click to add</span>
+                  </div>
+                </div>
+                <div style="margin-top:0.75rem;font-size:0.78rem;color:var(--clr-text-dim)">
+                  Zones persist across system restarts (stored in browser). Invalid coordinates are rejected automatically.
+                </div>
+                <div v-if="lastMissionFilePath" class="mission-path-hint">
+                  Last saved path file: {{ lastMissionFilePath }}
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Waypoint Sequence</div>
+                  <div class="card-subtitle">{{ waypointList.length }} waypoints defined</div>
+                </div>
+              </div>
+              <div class="card-body">
+                <div v-if="waypointList.length" class="waypoint-list">
+                  <div v-for="(wp, i) in waypointList" :key="wp.id" class="waypoint-item">
+                    <span class="waypoint-badge">{{ i+1 }}</span>
+                    <div class="waypoint-info">
+                      <div class="wp-label">{{ wp.label }}</div>
+                      <div class="wp-coord">x:{{ wp.x.toFixed(3) }} y:{{ wp.y.toFixed(3) }} z:{{ wp.z.toFixed(2) }}</div>
+                    </div>
+                    <span class="waypoint-remove" @click="removeWaypoint(wp.id)">✕</span>
+                  </div>
+                </div>
+                <div v-else class="empty-state" style="padding:2rem">
+                  <div class="empty-state-icon" style="font-size:2rem;opacity:0.3">📍</div>
+                  <div class="empty-state-title">No waypoints yet</div>
+                  <div class="empty-state-desc">Click on zones in the layout to add waypoints for the drone scouting path.</div>
+                </div>
+                <div v-if="waypointList.length" style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid var(--clr-border-subtle)">
+                  <div class="form-group">
+                    <label class="form-label">Default hover height (m)</label>
+                    <input type="number" v-model.number="defaultHoverZ" step="0.1" min="0.3" max="2.0" style="width:120px">
+                  </div>
+                  <div style="font-size:0.78rem;color:var(--clr-text-dim)">
+                    Estimated flight time: ~{{ estimatedFlightTime }}s for {{ waypointList.length }} waypoints
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card llm-chat-card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Natural language path (LLM)</div>
+                <div class="card-subtitle">Describe the route in plain language; the server writes the same mission .txt as Execute Mission and can sync waypoints to the map</div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="llm-chat-toolbar">
+                <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer">
+                  <input type="checkbox" v-model="llmQueueAfterChat" :disabled="llmChatBusy">
+                  Queue mission after generation
+                </label>
+                <span v-if="llmConfigured === false" style="color:var(--clr-warning)">No LLM API key detected. Set CW_LLM_API_KEY_INLINE at the top of telemetry_api_server.py, or set the OPENAI_API_KEY environment variable</span>
+              </div>
+              <div class="llm-chat-log">
+                <template v-if="llmChatMessages.length">
+                  <div v-for="(m, i) in llmChatMessages" :key="i" class="llm-chat-msg" :class="m.role">
+                    <div class="llm-role">{{ m.role === 'user' ? 'You' : 'Assistant' }}</div>
+                    <div>{{ m.text }}</div>
+                  </div>
+                </template>
+                <div v-else style="color:var(--clr-text-dim);font-size:0.8rem">Example: “Visit A1, then B2, then C3 at 0.6 m height”</div>
+              </div>
+              <div class="llm-chat-input-row">
+                <textarea v-model="llmChatInput" placeholder="Describe the greenhouse scouting path…" :disabled="llmChatBusy"></textarea>
+                <button type="button" class="btn btn-primary" :disabled="llmChatBusy || !llmChatInput.trim()" @click="sendLlmMissionChat">
+                  {{ llmChatBusy ? 'Generating…' : 'Generate path' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== MISSION LOG ===== -->
+        <div v-if="currentPage==='missionlog'" class="fade-in">
+          <div class="grid-2-1 section-gap">
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Mission Event Log</div>
+                  <div class="card-subtitle">Fail-safe events, flight actions, and system messages</div>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="mission-log">
+                  <div v-for="entry in filteredMissionLog" :key="entry.id" class="mission-entry">
+                    <span class="mission-ts">{{ entry.time }}</span>
+                    <span class="mission-msg" :class="'event-' + entry.level">{{ entry.message }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Drone Status</div>
+              </div>
+              <div class="card-body">
+                <template v-if="isLiveConnected">
+                  <div class="stat-card" style="margin-bottom:0.75rem">
+                    <div class="stat-label">Battery Level</div>
+                    <div style="display:flex;align-items:center;gap:0.75rem">
+                      <div class="stat-value" style="font-size:1.1rem" :style="{color: batteryPct<20?'var(--clr-danger)':batteryPct<40?'var(--clr-warning)':'var(--clr-success)'}">{{ batteryPct }}%</div>
+                      <div class="battery-gauge" style="flex:1">
+                        <div class="battery-fill" :style="{width: batteryPct+'%', background: batteryPct<20?'var(--clr-danger)':batteryPct<40?'var(--clr-warning)':'var(--clr-accent)'}"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="stat-card" style="margin-bottom:0.75rem">
+                    <div class="stat-label">Geofence</div>
+                    <span class="geofence-indicator" :class="{violated: geofenceViolated}">{{ geofenceViolated ? 'BOUNDARY ALERT' : 'WITHIN BOUNDS' }}</span>
+                  </div>
+                  <div class="stat-card" style="margin-bottom:0.75rem">
+                    <div class="stat-label">Comm Link</div>
+                    <div class="stat-value" style="font-size:1rem;color:var(--clr-success)">OK</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-label">Speed Limit</div>
+                    <div class="stat-value" style="font-size:1rem">0.3 m/s</div>
+                  </div>
+                </template>
+                <div v-else class="offline-notice" style="padding:1.5rem">
+                  <div class="offline-icon"><span style="font-size:1.3rem;color:var(--clr-text-dim)">📡</span></div>
+                  <div class="offline-title">Drone Not Connected</div>
+                  <div class="offline-desc">Connect the Crazyflie and start the API server to view drone status.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Run History Selector -->
+          <div class="card section-gap">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Run History</div>
+                <div class="card-subtitle">Select a historical run to view its data</div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div v-if="runHistory.length" class="run-history-list">
+                <div v-for="run in runHistory" :key="run.id" class="run-history-item"
+                  :class="{'active-run': run.id === activeRunId}"
+                  @click="loadRun(run)">
+                  <div>
+                    <div style="font-weight:600;color:var(--clr-text)">{{ run.name }}</div>
+                    <div class="run-date">{{ run.date }} · {{ run.rowCount }} rows</div>
+                  </div>
+                  <span class="pill pill-neutral">{{ run.zones }} zones</span>
+                </div>
+              </div>
+              <div v-else class="empty-state" style="padding:1.5rem">
+                <div class="empty-state-title">No historical runs</div>
+                <div class="empty-state-desc">Upload CSV data on the Data page. Each upload is stored as a run.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== SETTINGS ===== -->
+        <div v-if="currentPage==='settings'" class="fade-in">
+          <div class="grid-2 section-gap">
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Greenhouse Layout</div>
+              </div>
+              <div class="card-body">
+                <div class="form-group">
+                  <label class="form-label">Grid Rows</label>
+                  <input type="number" v-model.number="ghRows" min="1" max="12">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Grid Columns</label>
+                  <input type="number" v-model.number="ghCols" min="1" max="12">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Stress Threshold (high temp °F)</label>
+                  <input type="number" v-model.number="stressThresholdHigh" step="0.1">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Stress Threshold (low temp °F)</label>
+                  <input type="number" v-model.number="stressThresholdLow" step="0.1">
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Display & Connection</div>
+              </div>
+              <div class="card-body">
+                <div class="form-group">
+                  <div class="toggle-wrap" @click="theme = theme==='dark'?'light':'dark'">
+                    <div class="toggle-track" :class="{on: theme==='dark'}"></div>
+                    <span class="toggle-label">Dark Mode</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <div class="toggle-wrap" @click="autoRefresh=!autoRefresh">
+                    <div class="toggle-track" :class="{on: autoRefresh}"></div>
+                    <span class="toggle-label">Auto-refresh telemetry</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Refresh Interval (seconds)</label>
+                  <select v-model.number="refreshInterval">
+                    <option :value="2">2s</option>
+                    <option :value="5">5s</option>
+                    <option :value="10">10s</option>
+                    <option :value="30">30s</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Heatmap Resolution</label>
+                  <select v-model.number="heatmapResolution">
+                    <option :value="30">Low (30)</option>
+                    <option :value="60">Medium (60)</option>
+                    <option :value="90">High (90)</option>
+                    <option :value="120">Ultra (120)</option>
+                  </select>
+                </div>
+                <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--clr-border-subtle)">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Geofence & Safety Settings -->
+          <div class="grid-2 section-gap">
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Geofence & Safety</div>
+              </div>
+              <div class="card-body">
+                <div class="form-group">
+                  <label class="form-label">Geofence X min (m)</label>
+                  <input type="number" v-model.number="geofenceXMin" step="0.1">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Geofence X max (m)</label>
+                  <input type="number" v-model.number="geofenceXMax" step="0.1">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Geofence Y min (m)</label>
+                  <input type="number" v-model.number="geofenceYMin" step="0.1">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Geofence Y max (m)</label>
+                  <input type="number" v-model.number="geofenceYMax" step="0.1">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Max Speed (m/s)</label>
+                  <input type="number" v-model.number="maxSpeed" step="0.05" min="0.1" max="1.0">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Battery Auto-land Threshold (%)</label>
+                  <input type="number" v-model.number="batteryAutoLand" step="1" min="5" max="30">
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Data Export</div>
+              </div>
+              <div class="card-body">
+                <div class="export-options">
+                  <div class="export-card" @click="exportData('csv')">
+                    <div class="export-icon">📄</div>
+                    <div class="export-label">CSV</div>
+                    <div class="export-desc">Raw sensor data</div>
+                  </div>
+                  <div class="export-card" @click="exportData('json')">
+                    <div class="export-icon">📋</div>
+                    <div class="export-label">JSON</div>
+                    <div class="export-desc">Structured zone data</div>
+                  </div>
+                  <div class="export-card" @click="exportData('healthmap')">
+                    <div class="export-icon">🗺️</div>
+                    <div class="export-label">Health Map</div>
+                    <div class="export-desc">Zone scores export</div>
+                  </div>
+                  <div class="export-card" @click="exportData('waypoints')">
+                    <div class="export-icon">📍</div>
+                    <div class="export-label">Waypoints</div>
+                    <div class="export-desc">Flight waypoint CSV</div>
+                  </div>
+                </div>
+                <div v-if="lastExportMsg" style="margin-top:0.75rem;font-size:0.78rem;color:var(--clr-success)">{{ lastExportMsg }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const { createApp, ref, computed, watch, onMounted, onUnmounted, nextTick } = Vue;
+
+const API_BASE = 'http://localhost:5001';
+
+const app = createApp({
+  setup() {
+    const theme = ref('dark');
+    const currentPage = ref('dashboard');
+    const dashChart = ref('both');
+
+    // Data
+    const csvData = ref([]);
+    const csvColumns = ref([]);
+    const csvFileName = ref('');
+
+    const ghRows = ref(3);
+    const ghCols = ref(4);
+    const stressThresholdHigh = ref(78);
+    const stressThresholdLow = ref(68);
+    const heatmapMetric = ref('temperature');
+    const heatmapResolution = ref(60);
+
+    // Settings
+    const autoRefresh = ref(true);
+    const refreshInterval = ref(5);
+
+    // Live / API
+    const isLiveConnected = ref(false);
+    const apiConnected = ref(false);
+    const liveTemp = ref(0);
+    const livePressure = ref(0);
+    const liveData = ref([]);
+    let sseConnection = null;
+
+    // Comparison
+    const comparisonRuns = ref([]);
+    const comparisonView = ref('chart');
+    const comparisonMetric = ref('corr_temp_F');
+
+    // All possible comparison metrics with labels and units
+    const comparisonMetricOptions = [
+      { key: 'corr_temp_F', label: 'Corrected Temp', unit: '°F', group: 'Temperature' },
+      { key: 'raw_temp_F', label: 'Raw Temp', unit: '°F', group: 'Temperature' },
+      { key: 'ambient_est_F', label: 'Ambient Estimate', unit: '°F', group: 'Temperature' },
+      { key: 'thermal_offset_F', label: 'Thermal Offset', unit: '°F', group: 'Temperature' },
+      { key: 'expected_raw_F', label: 'Expected Raw Temp', unit: '°F', group: 'Temperature' },
+      { key: 'deviation_F', label: 'Deviation', unit: '°F', group: 'Temperature' },
+      { key: 'roc_F_per_s', label: 'Rate of Change', unit: '°F/s', group: 'Temperature' },
+      { key: 'station_pressure_hPa', label: 'Station Pressure', unit: 'hPa', group: 'Atmosphere' },
+      { key: 'sea_level_pressure_QFF_hPa', label: 'Sea Level Pressure (QFF)', unit: 'hPa', group: 'Atmosphere' },
+      { key: 'air_density_kg_m3', label: 'Air Density', unit: 'kg/m³', group: 'Atmosphere' },
+      { key: 'rel_alt_m', label: 'Altitude (m)', unit: 'm', group: 'Flight' },
+      { key: 'rel_alt_ft', label: 'Altitude (ft)', unit: 'ft', group: 'Flight' },
+      { key: 'battery_V', label: 'Battery Voltage', unit: 'V', group: 'Flight' },
+      { key: 'thrust', label: 'Thrust', unit: '', group: 'Flight' },
+    ];
+
+    // Only show metrics that exist in at least one loaded run
+    const availableComparisonMetrics = computed(() => {
+      const allCols = new Set();
+      filteredComparisonRuns.value.forEach(run => (run.columns || []).forEach(c => allCols.add(c)));
+      return comparisonMetricOptions.filter(m => allCols.has(m.key));
+    });
+
+    // Group available metrics by category
+    const groupedComparisonMetrics = computed(() => {
+      const groups = {};
+      availableComparisonMetrics.value.forEach(m => {
+        if (!groups[m.group]) groups[m.group] = [];
+        groups[m.group].push(m);
+      });
+      return groups;
+    });
+
+    const activeComparisonMetricLabel = computed(() => {
+      const found = comparisonMetricOptions.find(m => m.key === comparisonMetric.value);
+      return found ? found.label + (found.unit ? ' (' + found.unit + ')' : '') : comparisonMetric.value;
+    });
+
+    const selectedZone = ref(null);
+    const selectedMetrics = ref([]);
+
+    const currentDataPage = ref(1);
+    const pageSize = 50;
+
+    // Charts
+    const dashboardChartRef = ref(null);
+    const timeseriesChartRef = ref(null);
+    const flightPathChartRef = ref(null);
+    const liveChartRef = ref(null);
+    const comparisonChartRef = ref(null);
+    let chartInstances = {};
+
+    // --- NEW: Greenhouse Layout Editor ---
+    const waypointMap = ref({});  // { 'A1': {x,y,z}, ... }
+    // --- Mission execution state (server-driven) ---
+    const missionStatus = ref({
+      state: 'idle',          // idle | queued | running | done | cancelled | error
+      current_idx: 0,
+      total: 0,
+      message: '',
+      bridge_connected: false,
+    });
+    const missionBusy = computed(() =>
+      ['queued', 'running'].includes(missionStatus.value.state)
+    );
+    const defaultHoverZ = ref(0.6);
+
+    // --- NEW: Geofence & Safety ---
+    const geofenceXMin = ref(0.0);
+    const geofenceXMax = ref(3.0);
+    const geofenceYMin = ref(0.0);
+    const geofenceYMax = ref(3.0);
+    const maxSpeed = ref(0.3);
+    const batteryAutoLand = ref(10);
+    const geofenceViolated = ref(false);
+
+    // --- NEW: Mission Log ---
+    const missionLogFilter = ref('all');
+    const missionLogEntries = ref([]);
+
+    // --- NEW: Run History ---
+    const runHistory = ref([]);
+    const activeRunId = ref(null);
+    const availableDates = ref([]);
+    const selectedDashboardDate = ref('');
+    const selectedDashboardCsv = ref('');
+    const dashboardCsvFiles = ref([]);
+    const comparisonSelections = ref([
+      { id: 1, date: '', file: '' },
+      { id: 2, date: '', file: '' },
+    ]);
+    const comparisonFileOptionsByDate = ref({});
+    const MAX_COMPARATORS = 4;
+
+    // --- NEW: Export ---
+    const lastExportMsg = ref('');
+
+    // --- NEW: Camera Feed ---
+    const cameraConnected = ref(false);
+    const cameraCurrentZone = ref('A1');
+    const cameraFps = ref(10);
+
+    // --- Hover Test ---
+    const hoverTestAlt = ref(2.0);
+    const hoverTestDur = ref(10);
+    const hoverTestRunning = ref(false);
+    const hoverTestMsg = ref('');
+
+    // --- Flight Control Tab ---
+    const FLIGHT_API_BASE = API_BASE; // combined with live telemetry server on port 5001
+    const flightApiOnline = ref(false);
+    const flightRunning = ref(false);
+    const flightOutput = ref('');
+    const flightUri = ref('radio://0/80/2M/E7E7E7E7E7');
+    const flightHoverAltFt = ref(2.0);
+    const flightAmbientTemp = ref('74F');
+    let flightPollTimer = null;
+
+
+    // --- Layout Editor: mission file + LLM ---
+    const lastMissionFilePath = ref('');
+    const llmChatMessages = ref([]);
+    const llmChatInput = ref('');
+    const llmChatBusy = ref(false);
+    const llmQueueAfterChat = ref(false);
+    const llmConfigured = ref(null);
+
+    // --- NEW: Live telemetry extras ---
+    const liveBattery = ref(3.82);
+    const liveAltitude = ref(0.6);
+    const liveRawTemp = ref(null);
+    const liveCorrTemp = ref(null);
+    const liveDensity = ref(null);
+    const liveSeaLevelPressure = ref(null);
+    const liveAmbientEst = ref(null);
+    const liveRoc = ref(null);
+    const liveState = ref('—');
+    const liveMode = ref('—');
+    const liveEvent = ref('—');
+    const liveThrust = ref(null);
+    const liveExpectedRaw = ref(null);
+    const liveDeviation = ref(null);
+    const liveThermalOffset = ref(null);
+
+    // ---- Computed ----
+    const pageTitle = computed(() => {
+      const titles = {
+        dashboard: 'Dashboard',
+        heatmap: 'Zone Health Map',
+        timeseries: 'Time Series',
+        flightpath: 'Flight Path',
+        flight: 'Flight Control',
+        predictions: 'Stress Forecast',
+        data: 'Raw Data',
+        comparison: 'Run Comparison',
+        livefeed: 'Live Feed',
+        camerafeed: 'Camera Feed',
+        alerts: 'Alerts',
+        greenhouse: 'Layout Editor',
+        missionlog: 'Mission Log',
+        settings: 'Settings',
+      };
+      return titles[currentPage.value] || 'Dashboard';
+    });
+
+    const dataSourceLabel = computed(() => {
+      if (isLiveConnected.value) return 'Live Data';
+      if (csvData.value.length) return 'CSV Loaded';
+      if (apiConnected.value) return 'API Online';
+      return 'Not Connected';
+    });
+    const dataSourcePillClass = computed(() => {
+      if (isLiveConnected.value) return 'pill-success';
+      if (csvData.value.length) return 'pill-success';
+      if (apiConnected.value) return 'pill-warning';
+      return 'pill-neutral';
+    });
+
+    const droneConnectionLabel = computed(() => isLiveConnected.value ? 'Connected (sim)' : 'Offline');
+    const droneConnectionClass = computed(() => isLiveConnected.value ? 'online' : 'offline');
+    const batteryPct = ref(0);
+    const smoothedBatteryPct = ref(null);
+    const flightCount = ref(12);
+
+    function estimateBatteryPercentFromVoltage(rawVoltage) {
+      const v = Number(rawVoltage);
+      if (!Number.isFinite(v) || v <= 0) return null;
+      // 1S LiPo open-circuit approximation (non-linear).
+      const curve = [
+        { v: 4.20, p: 100 },
+        { v: 4.15, p: 95 },
+        { v: 4.10, p: 90 },
+        { v: 4.05, p: 80 },
+        { v: 4.00, p: 70 },
+        { v: 3.95, p: 60 },
+        { v: 3.90, p: 50 },
+        { v: 3.85, p: 40 },
+        { v: 3.80, p: 30 },
+        { v: 3.75, p: 22 },
+        { v: 3.70, p: 15 },
+        { v: 3.65, p: 10 },
+        { v: 3.60, p: 7 },
+        { v: 3.55, p: 5 },
+        { v: 3.50, p: 3 },
+        { v: 3.45, p: 2 },
+        { v: 3.40, p: 1 },
+        { v: 3.30, p: 0 },
+      ];
+      if (v >= curve[0].v) return 100;
+      if (v <= curve[curve.length - 1].v) return 0;
+      for (let i = 0; i < curve.length - 1; i++) {
+        const hi = curve[i];
+        const lo = curve[i + 1];
+        if (v <= hi.v && v >= lo.v) {
+          const t = (v - lo.v) / (hi.v - lo.v);
+          return lo.p + (hi.p - lo.p) * t;
+        }
+      }
+      return 0;
+    }
+
+    function updateBatteryPercent(rawVoltage) {
+      const estimate = estimateBatteryPercentFromVoltage(rawVoltage);
+      if (estimate == null) return;
+      // Smooth noisy, load-dependent voltage dips to reduce percent jitter.
+      if (smoothedBatteryPct.value == null) {
+        smoothedBatteryPct.value = estimate;
+      } else {
+        const alpha = 0.2;
+        smoothedBatteryPct.value = alpha * estimate + (1 - alpha) * smoothedBatteryPct.value;
+      }
+      batteryPct.value = Math.round(Math.max(0, Math.min(100, smoothedBatteryPct.value)));
+    }
+
+    const liveAltitudeFt = computed(() => liveAltitude.value == null ? null : liveAltitude.value * 3.28084);
+    const liveStateDisplay = computed(() => liveState.value || '—');
+    const liveModeDisplay = computed(() => liveMode.value || '—');
+    const liveEventDisplay = computed(() => liveEvent.value || '—');
+    const liveConnectionSummary = computed(() => {
+      const state = liveStateDisplay.value !== '—' ? liveStateDisplay.value : 'No state';
+      const mode = liveModeDisplay.value !== '—' ? liveModeDisplay.value : 'No mode';
+      return `${state} · ${mode}`;
+    });
+    const batteryValueStyle = computed(() => ({
+      color: liveBattery.value < 3.5 ? 'var(--clr-danger)' : liveBattery.value < 3.65 ? 'var(--clr-warning)' : 'var(--clr-success)'
+    }));
+
+    const zoneCount = computed(() => ghRows.value * ghCols.value);
+
+    function parseNumericValue(raw) {
+      if (typeof raw === 'number') return Number.isFinite(raw) ? raw : NaN;
+      if (typeof raw !== 'string') return NaN;
+      const s = raw.trim();
+      if (!s) return NaN;
+      // Strict numeric parse: reject timestamps like "2026-04-28 01:38:04".
+      if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(s)) return NaN;
+      const n = Number(s);
+      return Number.isFinite(n) ? n : NaN;
+    }
+
+    const TIMESERIES_EXCLUDED_COLUMNS = new Set(['thermal_offset_C', 'ambient_est_C']);
+
+    // Find numeric columns
+    const numericColumns = computed(() => {
+      if (!csvData.value.length) return [];
+      const rows = csvData.value;
+      const sampleSize = Math.min(rows.length, 40);
+      const minValid = Math.max(3, Math.floor(sampleSize * 0.6));
+      const first = rows[0] || {};
+      return Object.keys(first).filter(k => {
+        if (TIMESERIES_EXCLUDED_COLUMNS.has(k)) return false;
+        if (k.toLowerCase() === 'index') return false;
+        let valid = 0;
+        for (let i = 0; i < sampleSize; i++) {
+          if (!Number.isNaN(parseNumericValue(rows[i]?.[k]))) valid += 1;
+        }
+        return valid >= minValid;
+      });
+    });
+
+    // Temperature helpers
+    const tempColumn = computed(() => {
+      const priority = ['corr_temp_F','corr_temp_C','corrected_temp_F','corrected_temp_C','raw_temp_F','temp_F'];
+      return priority.find(c => csvColumns.value.includes(c)) || null;
+    });
+
+    const pressureColumn = computed(() => {
+      const priority = ['station_pressure_hPa','pressure_hPa','press_hPa','pressure'];
+      return priority.find(c => csvColumns.value.includes(c)) || null;
+    });
+
+    const tsColumn = computed(() => {
+      const priority = ['datetime_et','datetime','timestamp','time','ts'];
+      return priority.find(c => csvColumns.value.includes(c)) || null;
+    });
+
+    const xColumn = computed(() => {
+      const priority = ['lh_x_m','x_m','x','pos_x','stateEstimate.x'];
+      return priority.find(c => csvColumns.value.includes(c)) || null;
+    });
+
+    const yColumn = computed(() => {
+      const priority = ['lh_y_m','y_m','y','pos_y','stateEstimate.y'];
+      return priority.find(c => csvColumns.value.includes(c)) || null;
+    });
+
+    const hasPositionData = computed(() => xColumn.value && yColumn.value);
+
+    const avgTemp = computed(() => {
+      if (!tempColumn.value || !csvData.value.length) return '—';
+      const vals = csvData.value.map(r => parseFloat(r[tempColumn.value])).filter(v => !isNaN(v));
+      return vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) : '—';
+    });
+
+    const avgPressure = computed(() => {
+      if (!pressureColumn.value || !csvData.value.length) return '—';
+      const vals = csvData.value.map(r => parseFloat(r[pressureColumn.value])).filter(v => !isNaN(v));
+      return vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) : '—';
+    });
+
+    const tempTrend = computed(() => {
+      if (!tempColumn.value || csvData.value.length < 10) return 'Insufficient data';
+      const vals = csvData.value.map(r => parseFloat(r[tempColumn.value])).filter(v => !isNaN(v));
+      const firstHalf = vals.slice(0, Math.floor(vals.length/2));
+      const secondHalf = vals.slice(Math.floor(vals.length/2));
+      const avg1 = firstHalf.reduce((a,b)=>a+b,0)/firstHalf.length;
+      const avg2 = secondHalf.reduce((a,b)=>a+b,0)/secondHalf.length;
+      const diff = avg2 - avg1;
+      if (Math.abs(diff) < 0.1) return 'Stable';
+      return diff > 0 ? `+${diff.toFixed(2)}°F trending up` : `${diff.toFixed(2)}°F trending down`;
+    });
+
+    const tempTrendClass = computed(() => {
+      if (tempTrend.value.includes('up')) return 'up';
+      if (tempTrend.value.includes('down')) return 'down';
+      return 'neutral';
+    });
+
+    // Zone grid + ML-derived health scoring
+    const zoneGrid = computed(() => buildZoneGrid(false));
+    const predictedZoneGrid = computed(() => buildZoneGrid(true));
+
+    const stressZoneCount = computed(() => zoneGrid.value.filter(z => z.isStress).length);
+
+    const mlModelSummary = computed(() => {
+      if (!csvData.value.length) return 'No CSV/API data loaded yet';
+      const cols = csvColumns.value;
+      const hasLai = findColumn(cols, ['lai_cm2','leaf_area_cm2','canopy_area_cm2','plant_pixels']) !== null;
+      const hasImages = findColumn(cols, ['image_path','image','filename','plant_pixels','otsu_threshold']) !== null;
+      const envCols = ['corr_temp_F','raw_temp_F','station_pressure_hPa','air_density_kg_m3','rel_alt_m','battery_V']
+        .filter(c => cols.includes(c)).length;
+      const parts = ['BiGRU-style disease risk from drone environmental time series'];
+      if (hasLai || hasImages) parts.push('LAI/canopy vigor feature enabled');
+      else parts.push('LAI image model fallback uses sensor-only proxy');
+      parts.push(`${envCols} direct telemetry columns detected`);
+      return parts.join(' · ');
+    });
+
+    const topRiskZones = computed(() => predictedZoneGrid.value
+      .filter(z => z.hasData)
+      .slice()
+      .sort((a,b) => b.diseaseRisk - a.diseaseRisk)
+      .slice(0, 3));
+
+    function clamp01(x) { return Math.max(0, Math.min(1, Number.isFinite(x) ? x : 0)); }
+    function sigmoid(x) { return 1 / (1 + Math.exp(-x)); }
+    function avg(values) {
+      const nums = values.map(v => parseFloat(v)).filter(v => !isNaN(v));
+      return nums.length ? nums.reduce((a,b)=>a+b,0) / nums.length : null;
+    }
+    function findColumn(cols, names) {
+      const lower = new Map(cols.map(c => [c.toLowerCase(), c]));
+      for (const n of names) if (lower.has(n.toLowerCase())) return lower.get(n.toLowerCase());
+      return null;
+    }
+    function rowTempF(row) {
+      const fCol = findColumn(csvColumns.value, ['corr_temp_F','corrected_temp_F','temp_F','raw_temp_F']);
+      if (fCol && row[fCol] !== undefined && row[fCol] !== '') return parseFloat(row[fCol]);
+      const cCol = findColumn(csvColumns.value, ['corr_temp_C','corrected_temp_C','temp_C','raw_temp_C']);
+      if (cCol && row[cCol] !== undefined && row[cCol] !== '') return parseFloat(row[cCol]) * 9/5 + 32;
+      return NaN;
+    }
+    function getSeries(slice, colNames) {
+      const col = findColumn(csvColumns.value, colNames);
+      if (!col) return [];
+      return slice.map(r => parseFloat(r[col])).filter(v => !isNaN(v));
+    }
+    function simpleSlope(values) {
+      if (!values || values.length < 2) return 0;
+      const n = values.length;
+      const meanX = (n - 1) / 2;
+      const meanY = values.reduce((a,b)=>a+b,0) / n;
+      let num = 0, den = 0;
+      values.forEach((y, x) => { num += (x - meanX) * (y - meanY); den += (x - meanX) ** 2; });
+      return den ? num / den : 0;
+    }
+
+    function runCropHealthModels(slice, zoneIndex, isPrediction) {
+      const tempSeries = slice.map(rowTempF).filter(v => !isNaN(v));
+      const pressureSeries = getSeries(slice, ['station_pressure_hPa','pressure_hPa','press_hPa','pressure']);
+      const densitySeries = getSeries(slice, ['air_density_kg_m3','density']);
+      const altSeries = getSeries(slice, ['rel_alt_m','altitude_m','z_m','stateEstimate.z']);
+      const batterySeries = getSeries(slice, ['battery_V','vbat','pm.vbat']);
+      const laiSeries = getSeries(slice, ['lai_cm2','leaf_area_cm2','canopy_area_cm2']);
+      const plantPixels = getSeries(slice, ['plant_pixels','green_pixels','canopy_pixels']);
+      const greenness = getSeries(slice, ['greenness','green_index','green_ratio','exg','ndvi']);
+
+      const temp = avg(tempSeries) ?? 0;
+      const pressure = avg(pressureSeries) ?? 0;
+      const density = avg(densitySeries);
+      const altitude = avg(altSeries);
+      const battery = avg(batterySeries);
+      const lai = avg(laiSeries) ?? (plantPixels.length ? avg(plantPixels) * 2.605e-2 : null);
+      const green = avg(greenness);
+      const tempSlope = simpleSlope(tempSeries.slice(-Math.min(30, tempSeries.length)));
+      const laiSlope = laiSeries.length >= 2 ? simpleSlope(laiSeries) : 0;
+
+      if (!tempSeries.length && !pressureSeries.length && !laiSeries.length && !plantPixels.length) {
+        return { hasData:false, temp:0, pressure:0, health:0, diseaseRisk:0, lai:null, tempSlope:0, laiSlope:0, modelLabel:'No data', modelNotes:'No usable sensor rows for this zone.' };
+      }
+
+      // BiGRU concept from teammate model: sequence history + environmental features -> next-period disease probability.
+      const heatStress = temp ? Math.max(0, temp - stressThresholdHigh.value) / 10 : 0;
+      const coldStress = temp ? Math.max(0, stressThresholdLow.value - temp) / 10 : 0;
+      const tempVolatility = tempSeries.length > 2 ? Math.sqrt(tempSeries.reduce((a,v)=>a+(v-(avg(tempSeries)??v))**2,0)/tempSeries.length) / 4 : 0;
+      const pressurePenalty = pressure ? Math.abs(pressure - 1013.25) / 25 : 0;
+      const densityPenalty = density ? Math.abs(density - 1.20) / 0.18 : 0;
+      const batteryPenalty = battery ? Math.max(0, 3.55 - battery) / 0.35 : 0;
+      const growthPenalty = lai ? Math.max(0, -laiSlope) / Math.max(1, lai * 0.05) : 0;
+      const colorPenalty = green == null ? 0 : Math.max(0, 0.42 - green) / 0.42;
+      const trendPenalty = Math.max(0, tempSlope) / 0.12;
+
+      let logit = -2.0
+        + 1.45 * heatStress
+        + 1.15 * coldStress
+        + 0.85 * tempVolatility
+        + 0.55 * pressurePenalty
+        + 0.45 * densityPenalty
+        + 0.45 * trendPenalty
+        + 0.75 * growthPenalty
+        + 0.70 * colorPenalty
+        + 0.25 * batteryPenalty;
+
+      if (isPrediction) {
+        // 24–48h forecast nudges risk in the observed trend direction instead of using random simulated drift.
+        logit += 0.80 * Math.max(0, tempSlope) + 0.60 * Math.max(0, -laiSlope);
+      }
+
+      const diseaseRisk = clamp01(sigmoid(logit));
+      const environmentScore = 100 * (1 - clamp01(0.55*heatStress + 0.40*coldStress + 0.35*tempVolatility + 0.20*pressurePenalty));
+      const laiScore = lai == null ? 72 : Math.max(25, Math.min(100, 55 + Math.log1p(Math.max(0, lai)) * 12 + laiSlope * 8));
+      const colorScore = green == null ? 75 : Math.max(20, Math.min(100, green * 100));
+      const health = Math.max(0, Math.min(100, 0.48*environmentScore + 0.27*laiScore + 0.25*colorScore - diseaseRisk*28));
+      const modelLabel = diseaseRisk >= 0.65 ? 'High disease risk' : diseaseRisk >= 0.38 ? 'Watch' : 'Healthy';
+      const modelNotes = `Risk ${(diseaseRisk*100).toFixed(0)}% · temp trend ${tempSlope>=0?'+':''}${tempSlope.toFixed(3)} °F/sample` + (lai != null ? ` · LAI ${lai.toFixed(1)} cm²` : ' · no LAI column');
+
+      return { hasData:true, temp, pressure, health, diseaseRisk, lai, tempSlope, laiSlope, density, altitude, battery, modelLabel, modelNotes };
+    }
+
+    function buildZoneGrid(isPrediction) {
+      const zones = [];
+      const rows = ghRows.value;
+      const cols = ghCols.value;
+      const totalZones = rows * cols;
+      const total = csvData.value.length;
+      const perZone = total ? Math.max(1, Math.ceil(total / totalZones)) : 0;
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const label = String.fromCharCode(65 + r) + (c + 1);
+          const zoneIndex = r * cols + c;
+          const start = zoneIndex * perZone;
+          const end = Math.min(start + perZone, total);
+          const slice = total ? csvData.value.slice(start, end) : [];
+          const model = runCropHealthModels(slice, zoneIndex, isPrediction);
+          const hasData = model.hasData;
+          const temp = model.temp || 0;
+          const pressure = model.pressure || 0;
+          const health = hasData ? model.health : 0;
+          const isStress = hasData && (model.diseaseRisk >= 0.65 || health < 40 || temp > stressThresholdHigh.value || temp < stressThresholdLow.value);
+
+          let color, displayVal;
+          const metric = heatmapMetric.value;
+          if (!hasData) {
+            displayVal = '—';
+            color = 'rgba(255,255,255,0.05)';
+          } else if (metric === 'temperature') {
+            displayVal = temp.toFixed(1) + '°';
+            const norm = Math.max(0, Math.min(1, (temp - 65) / 18));
+            color = tempToColor(norm);
+          } else if (metric === 'pressure') {
+            displayVal = pressure ? pressure.toFixed(1) : '—';
+            const norm = Math.max(0, Math.min(1, (pressure - 1010) / 8));
+            color = pressureToColor(norm);
+          } else {
+            displayVal = health.toFixed(0) + '%';
+            color = healthToColor(health / 100);
+          }
+
+          const statusClass = health > 70 && model.diseaseRisk < 0.38 ? 'healthy' : health > 40 && model.diseaseRisk < 0.65 ? 'warning' : 'critical';
+          const statusText = statusClass === 'healthy' ? 'Healthy' : statusClass === 'warning' ? 'Watch' : 'Stress';
+
+          zones.push({
+            id: `${r}-${c}`, label, temp, pressure, health, isStress, hasData,
+            color, displayVal, count: slice.length,
+            statusClass, statusText,
+            dailyChange: model.laiSlope ? model.laiSlope : -model.diseaseRisk * 2,
+            diseaseRisk: model.diseaseRisk,
+            lai: model.lai,
+            tempSlope: model.tempSlope,
+            laiSlope: model.laiSlope,
+            modelLabel: model.modelLabel,
+            modelNotes: model.modelNotes,
+          });
+        }
+      }
+      return zones;
+    }
+
+    function tempToColor(norm) {
+      if (norm < 0.3) return `rgba(59, 130, 246, ${0.3+norm})`;
+      if (norm < 0.6) return `rgba(74, 222, 128, ${0.3+norm*0.5})`;
+      if (norm < 0.8) return `rgba(251, 191, 36, ${0.3+norm*0.5})`;
+      return `rgba(248, 113, 113, ${0.4+norm*0.4})`;
+    }
+
+    function pressureToColor(norm) {
+      if (norm < 0.3) return `rgba(96, 165, 250, ${0.3+norm})`;
+      if (norm < 0.7) return `rgba(74, 222, 160, ${0.3+norm*0.5})`;
+      return `rgba(251, 191, 36, ${0.3+norm*0.5})`;
+    }
+
+    function healthToColor(norm) {
+      if (norm > 0.7) return `rgba(74, 222, 128, ${0.25 + norm * 0.35})`;
+      if (norm > 0.4) return `rgba(251, 191, 36, ${0.25 + norm * 0.3})`;
+      return `rgba(248, 113, 113, ${0.3 + (1-norm) * 0.4})`;
+    }
+
+    const heatmapGridStyle = computed(() => ({
+      gridTemplateColumns: `repeat(${ghCols.value}, 1fr)`,
+    }));
+
+    // Alerts
+    const allAlerts = computed(() => {
+      const alerts = [];
+      zoneGrid.value.forEach(z => {
+        if (!z.hasData) return; // skip zones with no data
+        if (z.isStress) {
+          alerts.push({
+            id: `stress-${z.label}`,
+            icon: '●',
+            iconColor: 'var(--clr-danger)',
+            title: `Zone ${z.label} — Stress Detected`,
+            desc: `Temperature ${z.temp.toFixed(1)}°F is outside safe range (${stressThresholdLow.value}–${stressThresholdHigh.value}°F)`,
+            time: 'Now',
+            severity: 'critical',
+            severityLabel: 'Critical',
+          });
+        } else if (z.hasData && z.health < 70) {
+          alerts.push({
+            id: `watch-${z.label}`,
+            icon: '●',
+            iconColor: 'var(--clr-warning)',
+            title: `Zone ${z.label} — Health Declining`,
+            desc: `Health score at ${z.health.toFixed(0)}% — monitor closely`,
+            time: '2h ago',
+            severity: 'warning',
+            severityLabel: 'Warning',
+          });
+        }
+      });
+      return alerts;
+    });
+
+    const activeAlerts = computed(() => allAlerts.value.filter(a => a.severity === 'critical'));
+
+    // Predictions
+    const predictionSlots = computed(() => {
+      if (!csvData.value.length) {
+        return [{ time: '—', score: '—', color: 'var(--clr-text-dim)', label: 'No data' }];
+      }
+      const zones = zoneGrid.value.filter(z => z.hasData);
+      if (!zones.length) return [{ time: '—', score: '—', color: 'var(--clr-text-dim)', label: 'No data' }];
+      const avgHealth = zones.reduce((a,z)=>a+z.health,0) / zones.length;
+      const avgRisk = zones.reduce((a,z)=>a+z.diseaseRisk,0) / zones.length;
+      const avgTempSlope = zones.reduce((a,z)=>a+(z.tempSlope || 0),0) / zones.length;
+      const avgLaiSlope = zones.reduce((a,z)=>a+(z.laiSlope || 0),0) / zones.length;
+      return [0, 6, 12, 18, 24, 36, 48].map(h => {
+        const riskDrift = clamp01(avgRisk + (h / 48) * (Math.max(0, avgTempSlope) * 1.8 + Math.max(0, -avgLaiSlope) * 0.8));
+        const score = Math.max(5, Math.min(100, avgHealth - riskDrift * 24 - (h/48) * Math.max(0, avgTempSlope) * 35));
+        const color = score > 70 ? 'var(--clr-success)' : score > 40 ? 'var(--clr-warning)' : 'var(--clr-danger)';
+        const label = score > 70 ? 'Healthy' : score > 40 ? 'Watch' : 'Alert';
+        return { time: `+${h}h`, score: score.toFixed(0), color, label };
+      });
+    });
+
+    // Pagination
+    const totalDataPages = computed(() => Math.max(1, Math.ceil(csvData.value.length / pageSize)));
+    const paginatedData = computed(() => {
+      const start = (currentDataPage.value - 1) * pageSize;
+      return csvData.value.slice(start, start + pageSize);
+    });
+
+    // --- NEW Computed: Layout Editor zones ---
+    const layoutZones = computed(() => {
+      const zones = [];
+      for (let r = 0; r < ghRows.value; r++) {
+        for (let c = 0; c < ghCols.value; c++) {
+          const label = String.fromCharCode(65 + r) + (c + 1);
+          const wp = waypointMap.value[label];
+          const spacing_x = (geofenceXMax.value - geofenceXMin.value) / ghCols.value;
+          const spacing_y = (geofenceYMax.value - geofenceYMin.value) / ghRows.value;
+          zones.push({
+            id: `${r}-${c}`,
+            label,
+            hasWaypoint: !!wp,
+            x: wp ? wp.x : geofenceXMin.value + (c + 0.5) * spacing_x,
+            y: wp ? wp.y : geofenceYMin.value + (r + 0.5) * spacing_y,
+            z: wp ? wp.z : defaultHoverZ.value,
+          });
+        }
+      }
+      return zones;
+    });
+
+    const waypointList = computed(() => {
+      return layoutZones.value.filter(z => z.hasWaypoint).map(z => ({
+        id: z.id,
+        label: z.label,
+        x: waypointMap.value[z.label].x,
+        y: waypointMap.value[z.label].y,
+        z: waypointMap.value[z.label].z,
+      }));
+    });
+
+    const estimatedFlightTime = computed(() => {
+      const n = waypointList.value.length;
+      if (n === 0) return 0;
+      // ~3s hover per zone + ~2s travel between zones + takeoff/landing
+      return (n * 3 + (n - 1) * 2 + 10).toFixed(0);
+    });
+
+    // --- NEW Computed: Filtered Mission Log ---
+    const filteredMissionLog = computed(() => {
+      if (missionLogFilter.value === 'all') return missionLogEntries.value;
+      return missionLogEntries.value.filter(e => e.category === missionLogFilter.value);
+    });
+
+    // --- NEW Computed: Camera timestamp display ---
+    const cameraTsDisplay = computed(() => {
+      return new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    });
+
+    // --- NEW Computed: Last scouting time ---
+    const lastScoutingTime = computed(() => {
+      if (!csvData.value.length) return '—';
+      if (tsColumn.value) {
+        const last = csvData.value[csvData.value.length - 1][tsColumn.value];
+        if (last) {
+          const d = new Date(last);
+          return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+        }
+      }
+      return 'Just now';
+    });
+
+    // --- NEW Computed: Comparison run stats ---
+    const filteredComparisonRuns = computed(() => {
+      return comparisonRuns.value;
+    });
+    const canAddComparisonSlot = computed(() => comparisonSelections.value.length < MAX_COMPARATORS);
+
+    const comparisonRunStats = computed(() => {
+      return filteredComparisonRuns.value.map(run => {
+        const tsCol = ['datetime_et','datetime','timestamp'].find(c => run.columns?.includes(c));
+
+        // Helper: compute avg/min/max for a column
+        function colStats(colName) {
+          if (!run.columns?.includes(colName)) return null;
+          const vals = run.data.map(d => parseFloat(d[colName])).filter(v => !isNaN(v));
+          if (!vals.length) return null;
+          const avg = vals.reduce((a,b)=>a+b,0) / vals.length;
+          const min = Math.min(...vals);
+          const max = Math.max(...vals);
+          return { avg, min, max, count: vals.length };
+        }
+
+        let duration = '—';
+        if (tsCol && run.data.length > 1) {
+          const first = new Date(run.data[0][tsCol]);
+          const last = new Date(run.data[run.data.length-1][tsCol]);
+          const diffSec = Math.abs(last - first) / 1000;
+          if (diffSec < 120) duration = Math.round(diffSec) + 's';
+          else duration = (diffSec/60).toFixed(1) + 'min';
+        }
+
+        const corrTemp = colStats('corr_temp_F');
+        const rawTemp = colStats('raw_temp_F');
+        const pressure = colStats('station_pressure_hPa');
+        const seaPress = colStats('sea_level_pressure_QFF_hPa');
+        const altitude = colStats('rel_alt_ft');
+        const battery = colStats('battery_V');
+        const density = colStats('air_density_kg_m3');
+        const thrust = colStats('thrust');
+        const roc = colStats('roc_F_per_s');
+        const ambientEst = colStats('ambient_est_F');
+
+        return {
+          name: run.name,
+          sourceDate: run.sourceDate || null,
+          rowCount: run.data.length,
+          duration,
+          corrTemp, rawTemp, pressure, seaPress,
+          altitude, battery, density, thrust, roc, ambientEst,
+        };
+      });
+    });
+
+
+    async function checkFlightApi() {
+      try {
+        const res = await fetch(`${FLIGHT_API_BASE}/api/flight/status`);
+        const json = await res.json();
+        flightApiOnline.value = true;
+        flightRunning.value = !!json.running;
+        flightOutput.value = json.output || flightOutput.value;
+      } catch (err) {
+        flightApiOnline.value = false;
+        flightRunning.value = false;
+      }
+    }
+
+    function startFlightPolling() {
+      if (flightPollTimer) clearInterval(flightPollTimer);
+      flightPollTimer = setInterval(checkFlightApi, 1000);
+    }
+
+    async function launchFlightScript(scriptName) {
+      flightOutput.value = `Launching ${scriptName} flight script...\n`;
+      try {
+        const res = await fetch(`${FLIGHT_API_BASE}/api/flight/run`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            script: scriptName,
+            uri: flightUri.value,
+            hover_altitude_ft: flightHoverAltFt.value,
+            ambient_temp: flightAmbientTemp.value,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.ok) {
+          flightOutput.value += `Error: ${json.error || 'Unknown launcher error'}\n`;
+          await checkFlightApi();
+          return;
+        }
+        flightRunning.value = true;
+        flightOutput.value += json.message + '\n';
+        startFlightPolling();
+        addMissionLogEntry('flight', 'success', `Launched ${json.script_file}`);
+      } catch (err) {
+        flightOutput.value += 'Error: Flight API not reachable — start flight_control_api.py\n';
+        flightApiOnline.value = false;
+      }
+    }
+
+    async function stopFlightScript() {
+      try {
+        const res = await fetch(`${FLIGHT_API_BASE}/api/flight/stop`, { method: 'POST' });
+        const json = await res.json();
+        flightOutput.value = json.output || flightOutput.value;
+        flightRunning.value = false;
+        addMissionLogEntry('safety', 'warn', 'Flight script stop requested from front end');
+      } catch (err) {
+        flightOutput.value += '\nError: Flight API not reachable.\n';
+      }
+    }
+
+    // --- Hover Test Method ---
+    async function startHoverTest() {
+      hoverTestRunning.value = true;
+      hoverTestMsg.value = '';
+      try {
+        const res = await fetch(`${API_BASE}/api/hover-test`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ altitude_ft: hoverTestAlt.value, duration_s: hoverTestDur.value }),
+        });
+        const json = await res.json();
+        if (res.ok) {
+          hoverTestMsg.value = 'Hover test launched: ' + json.altitude_ft + ' ft for ' + json.duration_s + 's';
+          setTimeout(() => { hoverTestRunning.value = false; }, (hoverTestDur.value + 6) * 1000);
+        } else {
+          hoverTestMsg.value = 'Error: ' + (json.error || 'Unknown');
+          hoverTestRunning.value = false;
+        }
+      } catch (err) {
+        hoverTestMsg.value = 'Error: API not reachable — start flight script first';
+        hoverTestRunning.value = false;
+      }
+    }
+
+    // --- NEW Methods: Greenhouse Layout ---
+    function toggleWaypoint(zone) {
+      const label = zone.label;
+      if (waypointMap.value[label]) {
+        const newMap = { ...waypointMap.value };
+        delete newMap[label];
+        waypointMap.value = newMap;
+        addMissionLogEntry('data', 'info', `Waypoint removed: ${label}`);
+      } else {
+        // Validate coordinates inside geofence
+        const spacing_x = (geofenceXMax.value - geofenceXMin.value) / ghCols.value;
+        const spacing_y = (geofenceYMax.value - geofenceYMin.value) / ghRows.value;
+        const row = label.charCodeAt(0) - 65;
+        const col = parseInt(label.slice(1)) - 1;
+        const x = geofenceXMin.value + (col + 0.5) * spacing_x;
+        const y = geofenceYMin.value + (row + 0.5) * spacing_y;
+
+        if (x < geofenceXMin.value || x > geofenceXMax.value || y < geofenceYMin.value || y > geofenceYMax.value) {
+          addMissionLogEntry('safety', 'warn', `Waypoint ${label} rejected: outside geofence boundary`);
+          return;
+        }
+
+        waypointMap.value = {
+          ...waypointMap.value,
+          [label]: { x, y, z: defaultHoverZ.value }
+        };
+        addMissionLogEntry('data', 'success', `Waypoint added: ${label} (${x.toFixed(2)}, ${y.toFixed(2)}, ${defaultHoverZ.value})`);
+      }
+      // Persist to storage
+      try { localStorage.setItem('cw_waypoints', JSON.stringify(waypointMap.value)); } catch(e) {}
+    }
+
+    function removeWaypoint(id) {
+      const zone = layoutZones.value.find(z => z.id === id);
+      if (zone && waypointMap.value[zone.label]) {
+        const newMap = { ...waypointMap.value };
+        delete newMap[zone.label];
+        waypointMap.value = newMap;
+        try { localStorage.setItem('cw_waypoints', JSON.stringify(waypointMap.value)); } catch(e) {}
+        addMissionLogEntry('data', 'info', `Waypoint removed: ${zone.label}`);
+      }
+    }
+
+    function clearWaypoints() {
+      waypointMap.value = {};
+      try { localStorage.setItem('cw_waypoints', '{}'); } catch(e) {}
+      addMissionLogEntry('data', 'info', 'All waypoints cleared');
+    }
+
+    function exportWaypoints() {
+      if (!waypointList.value.length) return;
+      const header = 'zone_id,x_m,y_m,z_m\n';
+      const rows = waypointList.value.map(wp => `${wp.label},${wp.x.toFixed(4)},${wp.y.toFixed(4)},${wp.z.toFixed(2)}`).join('\n');
+      downloadFile(header + rows, 'waypoints.csv', 'text/csv');
+      addMissionLogEntry('data', 'success', `Exported ${waypointList.value.length} waypoints to CSV`);
+    }
+
+    function applyLlmWaypointsToMap(waypoints) {
+      if (!waypoints || !waypoints.length) return;
+      const m = {};
+      for (const w of waypoints) {
+        const lab = w.label || w.zone_id;
+        if (!lab) continue;
+        m[lab] = { x: w.x, y: w.y, z: w.z };
+      }
+      waypointMap.value = m;
+      try { localStorage.setItem('cw_waypoints', JSON.stringify(waypointMap.value)); } catch (e) {}
+    }
+
+    async function sendLlmMissionChat() {
+      const text = llmChatInput.value.trim();
+      if (!text || llmChatBusy.value) return;
+      llmChatMessages.value.push({ role: 'user', text });
+      llmChatBusy.value = true;
+      try {
+        const res = await fetch(`${API_BASE}/api/mission/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            queue_mission: llmQueueAfterChat.value,
+            context: {
+              gh_rows: ghRows.value,
+              gh_cols: ghCols.value,
+              geofence: {
+                x_min: geofenceXMin.value,
+                x_max: geofenceXMax.value,
+                y_min: geofenceYMin.value,
+                y_max: geofenceYMax.value,
+              },
+              default_z: defaultHoverZ.value,
+            },
+          }),
+        });
+        const json = await res.json();
+        llmChatInput.value = '';
+        if (res.ok && json.ok) {
+          if (json.latest_txt) {
+            lastMissionFilePath.value = json.latest_txt;
+            try { localStorage.setItem('cw_last_mission_txt', json.latest_txt); } catch (e) {}
+          }
+          applyLlmWaypointsToMap(json.waypoints);
+          llmChatMessages.value.push({
+            role: 'assistant',
+            text: json.summary || `Saved ${json.saved_txt || ''}`,
+          });
+          if (json.queued > 0) {
+            missionStatus.value = {
+              ...missionStatus.value,
+              state: 'queued',
+              current_idx: 0,
+              total: json.queued,
+              message: 'queued from LLM',
+              bridge_connected: json.bridge_connected,
+            };
+          }
+          addMissionLogEntry('data', 'success', `LLM path written: ${json.latest_txt || ''}`);
+        } else {
+          llmChatMessages.value.push({
+            role: 'assistant',
+            text: json.error || `Request failed (${res.status})`,
+          });
+          addMissionLogEntry('flight', 'error', `LLM: ${json.error || res.status}`);
+        }
+      } catch (err) {
+        llmChatMessages.value.push({
+          role: 'assistant',
+          text: 'API unreachable — start telemetry_api_server.py',
+        });
+      } finally {
+        llmChatBusy.value = false;
+      }
+    }
+
+    async function executeMission() {
+      if (!waypointList.value.length) return;
+      if (missionBusy.value) {
+        addMissionLogEntry('flight', 'warn', 'Mission already running — cancel first');
+        return;
+      }
+      const payload = {
+        gh_rows: ghRows.value,
+        gh_cols: ghCols.value,
+        waypoints: waypointList.value.map(wp => ({
+          x: wp.x, y: wp.y, z: wp.z,
+          label: wp.label,
+        })),
+      };
+      try {
+        const res = await fetch(`${API_BASE}/api/mission`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (res.ok && json.ok) {
+          if (json.latest_txt) {
+            lastMissionFilePath.value = json.latest_txt;
+            try { localStorage.setItem('cw_last_mission_txt', json.latest_txt); } catch (e) {}
+          }
+          addMissionLogEntry('flight', 'success',
+            `Mission queued: ${json.queued} waypoints` +
+            (json.latest_txt ? ` · txt: ${json.latest_txt}` : '') +
+            (json.bridge_connected ? '' : ' (WARN: ROS bridge offline)'));
+          missionStatus.value = { ...missionStatus.value,
+            state: 'queued', current_idx: 0, total: json.queued,
+            message: 'queued', bridge_connected: json.bridge_connected };
+        } else {
+          addMissionLogEntry('flight', 'error',
+            'Mission rejected: ' + (json.error || json.message || res.status));
+        }
+      } catch (err) {
+        addMissionLogEntry('flight', 'error',
+          'Mission failed: API server unreachable — start telemetry_api_server.py');
+      }
+    }
+
+    async function cancelMission() {
+      try {
+        const res = await fetch(`${API_BASE}/api/mission/cancel`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: '{}',
+        });
+        const json = await res.json();
+        if (res.ok && json.ok) {
+          addMissionLogEntry('safety', 'warn',
+            `Mission cancel sent (epoch=${json.cancel_epoch})`);
+        } else {
+          addMissionLogEntry('safety', 'error',
+            'Cancel rejected: ' + (json.error || res.status));
+        }
+      } catch (err) {
+        addMissionLogEntry('safety', 'error', 'Cancel failed: API unreachable');
+      }
+    }
+
+    function loadSavedWaypoints() {
+      try {
+        const saved = localStorage.getItem('cw_waypoints');
+        if (saved) waypointMap.value = JSON.parse(saved);
+        const p = localStorage.getItem('cw_last_mission_txt');
+        if (p) lastMissionFilePath.value = p;
+      } catch(e) {}
+    }
+
+    // --- NEW Methods: Mission Log ---
+    function addMissionLogEntry(category, level, message) {
+      const now = new Date();
+      missionLogEntries.value.unshift({
+        id: Date.now() + Math.random(),
+        time: now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}),
+        category,
+        level,
+        message,
+      });
+      if (missionLogEntries.value.length > 200) missionLogEntries.value.pop();
+    }
+
+    function generateInitialMissionLog() {
+      const events = [
+        { cat: 'flight', lvl: 'success', msg: 'System initialized — Crazyflie ready' },
+      ];
+      const now = Date.now();
+      events.forEach((ev, i) => {
+        missionLogEntries.value.push({
+          id: now + i,
+          time: new Date(now - (events.length - i) * 12000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}),
+          category: ev.cat,
+          level: ev.lvl,
+          message: ev.msg,
+        });
+      });
+    }
+
+    // --- NEW Methods: Run History ---
+    function setActiveDataset(run) {
+      csvData.value = run.data || [];
+      csvColumns.value = run.columns || (run.data?.[0] ? Object.keys(run.data[0]) : []);
+      csvFileName.value = run.name || '';
+      currentDataPage.value = 1;
+      const numericSet = new Set(numericColumns.value);
+      selectedMetrics.value = selectedMetrics.value.filter(col => numericSet.has(col));
+      if (!selectedMetrics.value.length && numericColumns.value.length) {
+        selectedMetrics.value = numericColumns.value.slice(0, 3);
+      }
+      nextTick(() => updateCharts());
+    }
+
+    function addRunToHistory(name, rowCount, data, columns, sourceDate = null) {
+      const now = new Date();
+      runHistory.value.unshift({
+        id: Date.now(),
+        name,
+        date: now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),
+        rowCount,
+        zones: ghRows.value * ghCols.value,
+        data: data || [],
+        columns: columns || [],
+        sourceDate,
+      });
+      activeRunId.value = runHistory.value[0].id;
+    }
+
+    function loadRun(run) {
+      activeRunId.value = run.id;
+      setActiveDataset(run);
+      addMissionLogEntry('data', 'info', `Loaded historical run: ${run.name}`);
+    }
+
+    // --- NEW Methods: Data Export ---
+    function exportData(type) {
+      lastExportMsg.value = '';
+      if (!csvData.value.length && type !== 'waypoints') {
+        lastExportMsg.value = 'No data to export — load a CSV first.';
+        return;
+      }
+      switch (type) {
+        case 'csv': {
+          const header = csvColumns.value.join(',') + '\n';
+          const rows = csvData.value.map(row => csvColumns.value.map(c => row[c] ?? '').join(',')).join('\n');
+          downloadFile(header + rows, 'cropwatcher_data.csv', 'text/csv');
+          lastExportMsg.value = 'CSV exported successfully.';
+          break;
+        }
+        case 'json': {
+          const payload = JSON.stringify({ zones: zoneGrid.value, data: csvData.value.slice(0, 100), exportedAt: new Date().toISOString() }, null, 2);
+          downloadFile(payload, 'cropwatcher_zones.json', 'application/json');
+          lastExportMsg.value = 'JSON exported successfully.';
+          break;
+        }
+        case 'healthmap': {
+          const header = 'zone_id,temperature_F,pressure_hPa,health_score,status\n';
+          const rows = zoneGrid.value.filter(z => z.hasData).map(z => `${z.label},${z.temp.toFixed(2)},${z.pressure.toFixed(2)},${z.health.toFixed(1)},${z.statusText}`).join('\n');
+          downloadFile(header + rows, 'health_map.csv', 'text/csv');
+          lastExportMsg.value = 'Health map exported successfully.';
+          break;
+        }
+        case 'waypoints': {
+          exportWaypoints();
+          lastExportMsg.value = waypointList.value.length ? 'Waypoints exported.' : 'No waypoints defined.';
+          break;
+        }
+      }
+      addMissionLogEntry('data', 'success', `Data exported: ${type}`);
+    }
+
+    function downloadFile(content, filename, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function formatLiveNumber(value, digits = 2) {
+      return value == null || Number.isNaN(Number(value)) ? '—' : Number(value).toFixed(digits);
+    }
+
+    function formatSignedLiveNumber(value, digits = 2) {
+      if (value == null || Number.isNaN(Number(value))) return '—';
+      const num = Number(value);
+      return `${num > 0 ? '+' : ''}${num.toFixed(digits)}`;
+    }
+
+    function formatLiveInteger(value) {
+      return value == null || Number.isNaN(Number(value)) ? '—' : String(Math.round(Number(value)));
+    }
+    function handleCSVUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          csvData.value = results.data;
+          csvColumns.value = results.meta.fields || [];
+          csvFileName.value = file.name;
+          currentDataPage.value = 1;
+          const numericSet = new Set(numericColumns.value);
+          selectedMetrics.value = selectedMetrics.value.filter(col => numericSet.has(col));
+          if (!selectedMetrics.value.length && numericColumns.value.length) {
+            selectedMetrics.value = numericColumns.value.slice(0, 3);
+          }
+          addRunToHistory(file.name, results.data.length, results.data, results.meta.fields || [], null);
+          addMissionLogEntry('data', 'success', `CSV loaded: ${file.name} (${results.data.length} rows)`);
+          nextTick(() => updateCharts());
+        }
+      });
+    }
+
+    async function loadAvailableDates() {
+      try {
+        const res = await fetch(`${API_BASE}/api/csv/dates`);
+        if (!res.ok) return;
+        const json = await res.json();
+        availableDates.value = json.dates || [];
+        if (!selectedDashboardDate.value && json.latest_date) {
+          selectedDashboardDate.value = json.latest_date;
+        }
+        if (selectedDashboardDate.value) {
+          await loadDashboardCsvFiles(selectedDashboardDate.value);
+        }
+        if (availableDates.value.length) {
+          if (!comparisonSelections.value[0].date) comparisonSelections.value[0].date = availableDates.value[0];
+          if (!comparisonSelections.value[1].date) comparisonSelections.value[1].date = availableDates.value[Math.min(1, availableDates.value.length - 1)];
+          await Promise.all(comparisonSelections.value.map(slot => onComparisonDateChange(slot, false)));
+          await onComparisonSelectionChange();
+        }
+      } catch (_) {}
+    }
+
+    async function onDashboardDateChange() {
+      selectedDashboardCsv.value = '';
+      await loadDashboardCsvFiles(selectedDashboardDate.value || undefined);
+      await loadFromAPI(selectedDashboardDate.value || undefined, undefined);
+    }
+
+    async function onDashboardCsvChange() {
+      await loadFromAPI(selectedDashboardDate.value || undefined, selectedDashboardCsv.value || undefined);
+    }
+
+    async function loadDashboardCsvFiles(dateStr) {
+      dashboardCsvFiles.value = [];
+      if (!dateStr) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/csv/files?date=${encodeURIComponent(dateStr)}`);
+        if (res.ok) {
+          const json = await res.json();
+          dashboardCsvFiles.value = json.files || [];
+          return;
+        }
+      } catch (_) {}
+
+      // Fallback for older backend versions without /api/csv/files
+      try {
+        const res = await fetch(`${API_BASE}/api/csv/rows?date=${encodeURIComponent(dateStr)}`);
+        if (!res.ok) return;
+        const json = await res.json();
+        const sourceName = (json.source || '').split('/').pop();
+        dashboardCsvFiles.value = sourceName ? [sourceName] : [];
+      } catch (_) {}
+    }
+
+    function getComparisonFileOptions(slot) {
+      if (!slot.date) return [];
+      return comparisonFileOptionsByDate.value[slot.date] || [];
+    }
+
+    async function onComparisonDateChange(slot, shouldReload = true) {
+      slot.file = '';
+      if (!slot.date) {
+        if (shouldReload) await onComparisonSelectionChange();
+        return;
+      }
+      if (!comparisonFileOptionsByDate.value[slot.date]) {
+        try {
+          const res = await fetch(`${API_BASE}/api/csv/files?date=${encodeURIComponent(slot.date)}`);
+          if (res.ok) {
+            const json = await res.json();
+            comparisonFileOptionsByDate.value = {
+              ...comparisonFileOptionsByDate.value,
+              [slot.date]: json.files || [],
+            };
+          } else {
+            // Fallback for older backend versions without /api/csv/files
+            const fallbackRes = await fetch(`${API_BASE}/api/csv/rows?date=${encodeURIComponent(slot.date)}`);
+            if (fallbackRes.ok) {
+              const fallbackJson = await fallbackRes.json();
+              const sourceName = (fallbackJson.source || '').split('/').pop();
+              comparisonFileOptionsByDate.value = {
+                ...comparisonFileOptionsByDate.value,
+                [slot.date]: sourceName ? [sourceName] : [],
+              };
+            }
+          }
+        } catch (_) {}
+      }
+      const files = getComparisonFileOptions(slot);
+      if (files.length) slot.file = files[0];
+      if (shouldReload) await onComparisonSelectionChange();
+    }
+
+    function addComparisonSlot() {
+      if (!canAddComparisonSlot.value) return;
+      const id = Date.now();
+      comparisonSelections.value.push({ id, date: availableDates.value[0] || '', file: '' });
+      const slot = comparisonSelections.value[comparisonSelections.value.length - 1];
+      onComparisonDateChange(slot);
+    }
+
+    function removeComparisonSlot(slotId) {
+      if (comparisonSelections.value.length <= 2) return;
+      comparisonSelections.value = comparisonSelections.value.filter(s => s.id !== slotId);
+      onComparisonSelectionChange();
+    }
+
+    async function onComparisonSelectionChange() {
+      const picks = comparisonSelections.value
+        .filter(s => s.date && s.file)
+        .map(s => ({ date: s.date, file: s.file }));
+
+      if (!picks.length) {
+        comparisonRuns.value = [];
+        nextTick(() => updateComparisonChart());
+        return;
+      }
+      try {
+        const responses = await Promise.all(
+          picks.map(async (pick) => {
+            const qs = `date=${encodeURIComponent(pick.date)}&file=${encodeURIComponent(pick.file)}`;
+            const res = await fetch(`${API_BASE}/api/csv/rows?${qs}`);
+            if (!res.ok) return null;
+            const json = await res.json();
+            return { pick, json };
+          })
+        );
+        comparisonRuns.value = responses
+          .filter(item => item && item.json && Array.isArray(item.json.rows) && item.json.rows.length)
+          .map((item) => ({
+            name: item.pick.file,
+            data: item.json.rows,
+            columns: item.json.columns || Object.keys(item.json.rows[0] || {}),
+            sourceDate: item.pick.date,
+          }));
+      } catch (_) {
+        comparisonRuns.value = [];
+      }
+      nextTick(() => updateComparisonChart());
+    }
+
+
+
+
+
+
+    // ============================================================
+    //  Load CSV from API — no demo fallback
+    // ============================================================
+    async function loadFromAPI(dateStr, fileName) {
+      try {
+        const query = [];
+        if (dateStr) query.push(`date=${encodeURIComponent(dateStr)}`);
+        if (fileName) query.push(`file=${encodeURIComponent(fileName)}`);
+        const qs = query.length ? `?${query.join('&')}` : '';
+        const res = await fetch(`${API_BASE}/api/csv/rows${qs}`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const json = await res.json();
+        apiConnected.value = true;
+        if (json.rows && json.rows.length) {
+          const sourceName = (json.source || '').split('/').pop() || 'drone_mapping_data.csv';
+          const sourceDate = json.date || null;
+          if (json.file && !selectedDashboardCsv.value) selectedDashboardCsv.value = json.file;
+          if (sourceDate && !availableDates.value.includes(sourceDate)) {
+            availableDates.value = [sourceDate, ...availableDates.value].sort().reverse();
+          }
+          if (sourceDate && !selectedDashboardDate.value) {
+            selectedDashboardDate.value = sourceDate;
+          }
+          const run = { name: sourceName, data: json.rows, columns: json.columns || Object.keys(json.rows[0]), sourceDate };
+          setActiveDataset(run);
+
+          addRunToHistory(sourceName, json.rows.length, run.data, run.columns, sourceDate);
+          addMissionLogEntry('data', 'success', 'Loaded ' + json.rows.length + ' rows from API');
+        }
+      } catch (err) {
+        apiConnected.value = false;
+        console.info('API offline:', err.message);
+      }
+    }
+
+
+
+
+
+
+
+    function refreshData() {
+      loadFromAPI();
+      connectToAPI();
+    }
+
+    function selectZone(zone) {
+      selectedZone.value = zone;
+    }
+
+    function toggleMetric(col) {
+      const idx = selectedMetrics.value.indexOf(col);
+      if (idx >= 0) selectedMetrics.value.splice(idx, 1);
+      else selectedMetrics.value.push(col);
+      nextTick(() => updateTimeseriesChart());
+    }
+
+    // ---- Chart rendering ----
+    const chartColors = [
+      '#4ade80','#60a5fa','#fbbf24','#f87171','#a78bfa','#fb923c','#22d3ee','#e879f9'
+    ];
+
+    function destroyChart(key) {
+      if (chartInstances[key]) {
+        chartInstances[key].destroy();
+        delete chartInstances[key];
+      }
+    }
+
+    function updateCharts() {
+      updateDashboardChart();
+      updateTimeseriesChart();
+      updateFlightPathChart();
+    }
+
+    function updateDashboardChart() {
+      const el = dashboardChartRef.value;
+      if (!el) return;
+      destroyChart('dashboard');
+
+      const data = csvData.value;
+      if (!data.length) return;
+
+      const labels = data.map((d, i) => {
+        if (tsColumn.value && d[tsColumn.value]) {
+          const dt = new Date(d[tsColumn.value]);
+          return dt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+        }
+        return i;
+      });
+
+      // Downsample for performance
+      const step = Math.max(1, Math.floor(data.length / 200));
+      const sampledLabels = labels.filter((_, i) => i % step === 0);
+
+      const datasets = [];
+      const mode = dashChart.value;
+
+      if ((mode === 'temp' || mode === 'both') && tempColumn.value) {
+        datasets.push({
+          label: 'Temperature (°F)',
+          data: data.filter((_, i) => i % step === 0).map(d => parseFloat(d[tempColumn.value])),
+          borderColor: '#4ade80',
+          backgroundColor: 'rgba(74,222,128,0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 0,
+          borderWidth: 2,
+          yAxisID: 'y',
+        });
+      }
+
+      if ((mode === 'pressure' || mode === 'both') && pressureColumn.value) {
+        datasets.push({
+          label: 'Pressure (hPa)',
+          data: data.filter((_, i) => i % step === 0).map(d => parseFloat(d[pressureColumn.value])),
+          borderColor: '#60a5fa',
+          backgroundColor: 'rgba(96,165,250,0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 0,
+          borderWidth: 2,
+          yAxisID: mode === 'both' ? 'y1' : 'y',
+        });
+      }
+
+      const scales = {
+        x: { display: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#7da395', maxTicksLimit: 10, font: { size: 10 } } },
+        y: { display: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#7da395', font: { size: 10 } } },
+      };
+
+      if (mode === 'both') {
+        scales.y1 = { display: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#60a5fa', font: { size: 10 } } };
+      }
+
+      chartInstances['dashboard'] = new Chart(el, {
+        type: 'line',
+        data: { labels: sampledLabels, datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#7da395', font: { size: 11 } } } },
+          scales,
+          interaction: { intersect: false, mode: 'index' },
+        }
+      });
+    }
+
+    function updateTimeseriesChart() {
+      const el = timeseriesChartRef.value;
+      if (!el || !csvData.value.length) return;
+      destroyChart('timeseries');
+
+      const data = csvData.value;
+      const step = Math.max(1, Math.floor(data.length / 300));
+
+      const labels = data.filter((_, i) => i % step === 0).map((d, i) => {
+        if (tsColumn.value && d[tsColumn.value]) {
+          return new Date(d[tsColumn.value]).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        }
+        return i * step;
+      });
+
+      const sampled = data.filter((_, i) => i % step === 0);
+      const datasets = selectedMetrics.value.map((col, idx) => {
+        const yAxisId = `tsY${idx}`;
+        return {
+          label: col,
+          data: sampled.map(d => parseNumericValue(d[col])),
+          borderColor: chartColors[idx % chartColors.length],
+          backgroundColor: 'transparent',
+          tension: 0.3,
+          pointRadius: 0,
+          borderWidth: 2,
+          spanGaps: true,
+          yAxisID: yAxisId,
+        };
+      });
+
+      const dynamicScales = {
+        x: { display: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#7da395', maxTicksLimit: 12, font: { size: 10 } } },
+      };
+      datasets.forEach((ds, idx) => {
+        dynamicScales[ds.yAxisID] = {
+          type: 'linear',
+          display: idx < 2,
+          position: idx % 2 === 0 ? 'left' : 'right',
+          grid: idx === 0 ? { color: 'rgba(255,255,255,0.05)' } : { drawOnChartArea: false },
+          ticks: { color: chartColors[idx % chartColors.length], font: { size: 10 } },
+        };
+      });
+
+      chartInstances['timeseries'] = new Chart(el, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#7da395', font: { size: 11 } } } },
+          scales: dynamicScales,
+        }
+      });
+    }
+
+    function updateFlightPathChart() {
+      const el = flightPathChartRef.value;
+      if (!el || !hasPositionData.value) return;
+      destroyChart('flightpath');
+
+      const data = csvData.value;
+      const step = Math.max(1, Math.floor(data.length / 500));
+      const points = data.filter((_, i) => i % step === 0).map(d => ({
+        x: parseFloat(d[xColumn.value]),
+        y: parseFloat(d[yColumn.value]),
+      })).filter(p => !isNaN(p.x) && !isNaN(p.y));
+
+      chartInstances['flightpath'] = new Chart(el, {
+        type: 'scatter',
+        data: {
+          datasets: [{
+            label: 'Flight Path',
+            data: points,
+            borderColor: '#4ade80',
+            backgroundColor: points.map((_, i) => {
+              const alpha = 0.3 + (i / points.length) * 0.7;
+              return `rgba(74,222,128,${alpha})`;
+            }),
+            pointRadius: 3,
+            showLine: true,
+            borderWidth: 1,
+            fill: false,
+            tension: 0.1,
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { title: { display: true, text: xColumn.value, color: '#7da395' }, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#7da395' } },
+            y: { title: { display: true, text: yColumn.value, color: '#7da395' }, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#7da395' } },
+          },
+        }
+      });
+    }
+
+    function updateComparisonChart() {
+      const el = comparisonChartRef.value;
+      if (!el || filteredComparisonRuns.value.length < 2) return;
+      destroyChart('comparison');
+
+      const metric = comparisonMetric.value;
+      const metaInfo = comparisonMetricOptions.find(m => m.key === metric);
+      const yLabel = metaInfo ? metaInfo.label + (metaInfo.unit ? ' (' + metaInfo.unit + ')' : '') : metric;
+
+      const datasets = filteredComparisonRuns.value.map((run, idx) => {
+        if (!run.columns?.includes(metric)) return null;
+        const step = Math.max(1, Math.floor(run.data.length / 200));
+        return {
+          label: run.name,
+          data: run.data.filter((_, i) => i % step === 0).map(d => parseFloat(d[metric])),
+          borderColor: chartColors[idx % chartColors.length],
+          backgroundColor: 'transparent',
+          tension: 0.3,
+          pointRadius: 0,
+          borderWidth: 2,
+        };
+      }).filter(Boolean);
+
+      if (!datasets.length) return;
+
+      const maxLen = Math.max(...datasets.map(d => d.data.length));
+      const labels = Array.from({length: maxLen}, (_, i) => i);
+
+      chartInstances['comparison'] = new Chart(el, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#7da395' } },
+            title: { display: true, text: yLabel, color: '#7da395', font: { size: 12 } },
+          },
+          scales: {
+            x: { display: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#7da395', maxTicksLimit: 10 }, title: { display: true, text: 'Sample Index', color: '#7da395', font: { size: 10 } } },
+            y: { display: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#7da395' }, title: { display: true, text: yLabel, color: '#7da395', font: { size: 10 } } },
+          },
+        }
+      });
+    }
+
+    function updateLiveChart() {
+      const el = liveChartRef.value;
+      if (!el) return;
+      destroyChart('live');
+
+      const labels = liveData.value.map(d => d.time);
+      chartInstances['live'] = new Chart(el, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Corrected Temp (°F)',
+              data: liveData.value.map(d => d.corrTemp),
+              borderColor: '#4ade80',
+              backgroundColor: 'rgba(74,222,128,0.1)',
+              fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+              yAxisID: 'y',
+            },
+            {
+              label: 'Raw Temp (°F)',
+              data: liveData.value.map(d => d.rawTemp),
+              borderColor: '#fbbf24',
+              backgroundColor: 'rgba(251,191,36,0.06)',
+              fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2,
+              yAxisID: 'y',
+            },
+            {
+              label: 'Pressure (hPa)',
+              data: liveData.value.map(d => d.pressure),
+              borderColor: '#60a5fa',
+              backgroundColor: 'rgba(96,165,250,0.1)',
+              fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2,
+              yAxisID: 'y1',
+            }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          animation: { duration: 0 },
+          plugins: { legend: { labels: { color: '#7da395', font: { size: 10 } } } },
+          scales: {
+            x: { display: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#7da395', maxTicksLimit: 8, font: { size: 9 } } },
+            y: { display: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#7da395', font: { size: 9 } } },
+            y1: { display: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#60a5fa', font: { size: 9 } } },
+          },
+        }
+      });
+    }
+
+
+
+
+
+
+
+    // ============================================================
+    //  SSE real-time — no simulation fallback
+    // ============================================================
+    async function connectToAPI() {
+      try {
+        const probe = await fetch(`${API_BASE}/api/status`);
+        if (!probe.ok) throw new Error('HTTP ' + probe.status);
+        apiConnected.value = true;
+
+        try {
+          const hp = await fetch(`${API_BASE}/api/health`);
+          if (hp.ok) {
+            const hj = await hp.json();
+            llmConfigured.value = hj.llm_configured === true;
+          }
+        } catch (e) {
+          llmConfigured.value = false;
+        }
+
+        sseConnection = new EventSource(`${API_BASE}/api/stream`);
+
+        sseConnection.addEventListener('init', (e) => {
+          const s = JSON.parse(e.data);
+          isLiveConnected.value = s.connected;
+          if (s.telemetry) {
+            liveTemp.value = s.telemetry.corr_temp_F || s.telemetry.corr_temp_C || 0;
+            liveCorrTemp.value = s.telemetry.corr_temp_F ?? s.telemetry.corr_temp_C ?? null;
+            liveRawTemp.value = s.telemetry.raw_temp_F ?? s.telemetry.raw_temp_C ?? null;
+            livePressure.value = s.telemetry.station_pressure_hPa || 0;
+            liveSeaLevelPressure.value = s.telemetry.sea_level_pressure_QFF_hPa ?? null;
+            liveBattery.value = s.telemetry.battery_V || 0;
+            liveAltitude.value = s.telemetry.rel_alt_m || 0;
+            liveDensity.value = s.telemetry.air_density_kg_m3 ?? null;
+            liveAmbientEst.value = s.telemetry.ambient_est_F ?? s.telemetry.ambient_est_C ?? null;
+            liveRoc.value = s.telemetry.roc_F_per_s ?? s.telemetry.roc_C_per_s ?? null;
+            liveState.value = s.telemetry.state || '—';
+            liveMode.value = s.telemetry.mode || '—';
+            liveEvent.value = s.telemetry.event || '—';
+            liveThrust.value = s.telemetry.thrust ?? null;
+            liveExpectedRaw.value = s.telemetry.expected_raw_F ?? s.telemetry.expected_raw_C ?? null;
+            liveDeviation.value = s.telemetry.deviation_F ?? s.telemetry.deviation_C ?? null;
+            liveThermalOffset.value = s.telemetry.thermal_offset_F ?? s.telemetry.thermal_offset_C ?? null;
+            updateBatteryPercent(s.telemetry.battery_V);
+          }
+          if (s.geofence) {
+            geofenceXMin.value = s.geofence.x_min; geofenceXMax.value = s.geofence.x_max;
+            geofenceYMin.value = s.geofence.y_min; geofenceYMax.value = s.geofence.y_max;
+            geofenceViolated.value = s.geofence.violated || false;
+          }
+          if (s.mission) flightCount.value = s.mission.flight_count || 0;
+          // NEW: seed mission status on reconnect so the UI is correct
+          if (s.mission_status) {
+            missionStatus.value = {
+              ...missionStatus.value,
+              ...s.mission_status,
+              bridge_connected: !!s.bridge_connected,
+            };
+          }
+        });
+
+        // NEW: mission progress events from the bridge
+        sseConnection.addEventListener('mission', (e) => {
+          try {
+            const d = JSON.parse(e.data);
+            missionStatus.value = {
+              state: d.state || missionStatus.value.state,
+              current_idx: d.current_idx ?? missionStatus.value.current_idx,
+              total: d.total ?? missionStatus.value.total,
+              message: d.message || '',
+              bridge_connected: true,
+            };
+          } catch (err) {}
+        });
+
+        sseConnection.addEventListener('telemetry', (e) => {
+          const d = JSON.parse(e.data);
+          isLiveConnected.value = true;
+          liveTemp.value = d.corr_temp_F || d.corr_temp_C || liveTemp.value;
+          liveCorrTemp.value = d.corr_temp_F ?? d.corr_temp_C ?? liveCorrTemp.value;
+          liveRawTemp.value = d.raw_temp_F ?? d.raw_temp_C ?? liveRawTemp.value;
+          livePressure.value = d.station_pressure_hPa || livePressure.value;
+          liveSeaLevelPressure.value = d.sea_level_pressure_QFF_hPa ?? liveSeaLevelPressure.value;
+          liveBattery.value = d.battery_V || liveBattery.value;
+          liveAltitude.value = d.rel_alt_m || liveAltitude.value;
+          liveDensity.value = d.air_density_kg_m3 ?? liveDensity.value;
+          liveAmbientEst.value = d.ambient_est_F ?? d.ambient_est_C ?? liveAmbientEst.value;
+          liveRoc.value = d.roc_F_per_s ?? d.roc_C_per_s ?? liveRoc.value;
+          liveState.value = d.state || liveState.value;
+          liveMode.value = d.mode || liveMode.value;
+          liveEvent.value = d.event || liveEvent.value;
+          liveThrust.value = d.thrust ?? liveThrust.value;
+          liveExpectedRaw.value = d.expected_raw_F ?? d.expected_raw_C ?? liveExpectedRaw.value;
+          liveDeviation.value = d.deviation_F ?? d.deviation_C ?? liveDeviation.value;
+          liveThermalOffset.value = d.thermal_offset_F ?? d.thermal_offset_C ?? liveThermalOffset.value;
+          updateBatteryPercent(d.battery_V);
+          const now = new Date();
+          liveData.value.push({
+            time: now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}),
+            corrTemp: liveCorrTemp.value,
+            rawTemp: liveRawTemp.value,
+            pressure: livePressure.value,
+          });
+          if (liveData.value.length > 200) liveData.value.shift();
+          if (currentPage.value === 'livefeed') nextTick(() => updateLiveChart());
+        });
+
+        sseConnection.addEventListener('event', (e) => {
+          const evt = JSON.parse(e.data);
+          addMissionLogEntry(evt.level === 'error' ? 'safety' : 'flight', evt.level, evt.message);
+        });
+
+        sseConnection.onerror = () => {
+          isLiveConnected.value = false;
+          if (sseConnection) { sseConnection.close(); sseConnection = null; }
+        };
+      } catch (err) {
+        apiConnected.value = false;
+        isLiveConnected.value = false;
+      }
+    }
+
+
+
+
+
+
+
+    // Watchers
+    watch(currentPage, (val) => {
+      nextTick(() => {
+        if (val === 'dashboard') updateDashboardChart();
+        if (val === 'timeseries') updateTimeseriesChart();
+        if (val === 'flightpath') updateFlightPathChart();
+        if (val === 'flight') checkFlightApi();
+        if (val === 'livefeed') updateLiveChart();
+        if (val === 'comparison') updateComparisonChart();
+      });
+    });
+
+    watch(dashChart, () => nextTick(() => updateDashboardChart()));
+
+    // Lifecycle
+    onMounted(() => {
+      loadAvailableDates().then(() => loadFromAPI(selectedDashboardDate.value || undefined));
+      connectToAPI();
+      loadSavedWaypoints();
+      generateInitialMissionLog();
+      checkFlightApi();
+    });
+
+    onUnmounted(() => {
+      if (sseConnection) { sseConnection.close(); sseConnection = null; }
+      if (flightPollTimer) { clearInterval(flightPollTimer); flightPollTimer = null; }
+      Object.keys(chartInstances).forEach(destroyChart);
+    });
+
+    return {
+      theme, currentPage, dashChart, pageTitle,
+      csvData, csvColumns, csvFileName,
+      ghRows, ghCols, stressThresholdHigh, stressThresholdLow,
+      heatmapMetric, heatmapResolution,
+      autoRefresh, refreshInterval,
+      isLiveConnected, liveTemp, livePressure,
+      comparisonRuns, comparisonView, comparisonMetric,
+      filteredComparisonRuns,
+      comparisonSelections,
+      canAddComparisonSlot, MAX_COMPARATORS,
+      comparisonMetricOptions, availableComparisonMetrics, groupedComparisonMetrics,
+      activeComparisonMetricLabel,
+      selectedZone, selectedMetrics, currentDataPage,
+      dataSourceLabel, dataSourcePillClass,
+      droneConnectionLabel, droneConnectionClass, batteryPct, flightCount,
+      zoneCount, numericColumns,
+      avgTemp, avgPressure, tempTrend, tempTrendClass,
+      stressZoneCount,
+      zoneGrid, predictedZoneGrid, heatmapGridStyle,
+      mlModelSummary, topRiskZones,
+      allAlerts, activeAlerts,
+      predictionSlots,
+      totalDataPages, paginatedData, pageSize,
+      hasPositionData,
+
+      // Layout Editor
+      layoutZones, waypointList, waypointMap, defaultHoverZ, estimatedFlightTime,
+      lastMissionFilePath,
+      llmChatMessages, llmChatInput, llmChatBusy, llmQueueAfterChat, llmConfigured,
+      sendLlmMissionChat,
+      // Mission execution
+      missionStatus, missionBusy, executeMission, cancelMission,
+      // Geofence & Safety
+      geofenceXMin, geofenceXMax, geofenceYMin, geofenceYMax,
+      maxSpeed, batteryAutoLand, geofenceViolated,
+      // Mission Log
+      missionLogFilter, missionLogEntries, filteredMissionLog,
+      // Run History
+      runHistory, activeRunId, availableDates, selectedDashboardDate, selectedDashboardCsv, dashboardCsvFiles,
+      // Export
+      lastExportMsg,
+      // Camera Feed
+      cameraConnected, cameraCurrentZone, cameraFps,
+      cameraTsDisplay,
+      // Live Telemetry extras
+      liveBattery, liveAltitude, liveAltitudeFt, liveRawTemp, liveCorrTemp,
+      liveDensity, liveSeaLevelPressure, liveAmbientEst, liveRoc,
+      liveState, liveMode, liveEvent, liveThrust, liveExpectedRaw,
+      liveDeviation, liveThermalOffset, liveStateDisplay, liveModeDisplay,
+      liveEventDisplay, liveConnectionSummary, batteryValueStyle,
+      formatLiveNumber, formatSignedLiveNumber, formatLiveInteger,
+      // Dashboard extras
+      lastScoutingTime,
+      // Comparison stats
+      comparisonRunStats,
+
+      dashboardChart: dashboardChartRef,
+      timeseriesChart: timeseriesChartRef,
+      flightPathChart: flightPathChartRef,
+      liveChart: liveChartRef,
+      comparisonChart: comparisonChartRef,
+
+      handleCSVUpload, loadFromAPI, apiConnected,
+      onDashboardDateChange, onDashboardCsvChange,
+      onComparisonDateChange, onComparisonSelectionChange, getComparisonFileOptions,
+      addComparisonSlot, removeComparisonSlot,
+      hoverTestAlt, hoverTestDur, hoverTestRunning, hoverTestMsg, startHoverTest,
+      flightApiOnline, flightRunning, flightOutput, flightUri, flightHoverAltFt, flightAmbientTemp,
+      checkFlightApi, launchFlightScript, stopFlightScript,
+      refreshData, selectZone, toggleMetric,
+      // Layout methods
+      toggleWaypoint, removeWaypoint, clearWaypoints, exportWaypoints,
+      loadRun, exportData, updateComparisonChart,
+    };
+  }
+});
+
+app.mount('#app');
+</script>
+</body>
+</html>
